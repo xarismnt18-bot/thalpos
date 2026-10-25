@@ -75,7 +75,7 @@ Everything runs on **3V3**; nothing goes to `Vin`. At start-up the firmware chec
 ## Try it without hardware
 
 - **Live demo**: the dashboard alone, with the sensor simulated in the browser.
-- **Codespaces** (button above): the real backend too. `tools/simulate_board.py` publishes the same MQTT message the ESP8266 sends, so alerts, forecasts, presence and history all run for real. Logs are in `logs/`; `bash .devcontainer/start.sh` restarts everything. Telegram, Alexa and the lamp stay off there.
+- **Codespaces** (button above): the real backend too. `tools/simulate_board.py` publishes the same MQTT message the ESP8266 sends, so alerts, forecasts, presence and history all run for real. Logs are in `logs/`; `bash tools/codespaces_start.sh` restarts everything. Telegram, Alexa and the lamp stay off there.
 
 ## Quick start (Windows)
 
