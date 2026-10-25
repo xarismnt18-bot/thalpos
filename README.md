@@ -6,6 +6,10 @@ Thalpos is a smart room monitor. An ESP8266 measures the temperature and humidit
 
 **[▶ Live demo](https://xarismnt18-bot.github.io/thalpos/)**: the real dashboard with a simulated sensor, running in your browser. Nothing to install.
 
+**[▶ Run the code in your browser](https://codespaces.new/xarismnt18-bot/thalpos?quickstart=1)**: opens the project in GitHub Codespaces and starts the whole stack (MQTT broker, a simulated board, the FastAPI backend and the dashboard). The dashboard opens by itself after about two minutes. Needs only a GitHub account.
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/xarismnt18-bot/thalpos?quickstart=1)
+
 **[📄 Presentation (PDF)](docs/Thalpos_presentation.pdf)**: the project in 16 slides, from the idea and the problem it solves to the hardware, architecture, code and lessons learned.
 
 ![Dashboard: the 3D twin of the home, with a hologram in the bedroom while the radar sees someone](docs/screenshots/presence.png)
@@ -67,6 +71,11 @@ The board finds the PC by itself: the backend broadcasts its address on the loca
 | HMMD 24 GHz mmWave radar | Presence detection | OT1 → D5, 3V3, GND |
 
 Everything runs on **3V3**; nothing goes to `Vin`. At start-up the firmware checks which parts are connected and uses what it finds. Wiring details, radar placement and flashing: **[docs/hardware.md](docs/hardware.md)**.
+
+## Try it without hardware
+
+- **Live demo**: the dashboard alone, with the sensor simulated in the browser.
+- **Codespaces** (button above): the real backend too. `tools/simulate_board.py` publishes the same MQTT message the ESP8266 sends, so alerts, forecasts, presence and history all run for real. Logs are in `logs/`; `bash .devcontainer/start.sh` restarts everything. Telegram, Alexa and the lamp stay off there.
 
 ## Quick start (Windows)
 
