@@ -15,7 +15,7 @@ from config import (  # noqa: E402
     PREDICTION_MINUTES_AHEAD, PREDICTION_LOOKBACK_MIN, SENSOR_STALE_SEC,
     MQTT_PORT, DISCOVERY_ENABLED, DISCOVERY_PORT, DISCOVERY_INTERVAL_SEC, DISCOVERY_KEY,
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTIFY_CHECK_SEC, NOTIFY_COOLDOWN_MIN,
-    DAILY_SUMMARY_TIME, STATS_FILE, HISTORY_DB, ALERT_STATE_FILE, PREFERENCES_FILE,
+    DAILY_SUMMARY_TIME, STATS_FILE, HISTORY_DB, ALERT_STATE_FILE, PREFERENCES_FILE, VOICE_STATUS_STATE_FILE,
     VOICEMONKEY_TOKEN, VOICEMONKEY_DEVICE, VOICE_QUIET_HOURS, VOICE_STATUS_VAR, VOICE_STATUS_SEC, VOICE_STATUS_ENABLED,
     IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID, LAMP_QUIET_HOURS, HUMIDITY_HOLD_MIN, MOLD_EXPOSURE_HOURS,
 )
@@ -30,7 +30,7 @@ from backend.discovery import BrokerBeacon  # noqa: E402
 from backend.notifier import AlertNotifier, TelegramClient  # noqa: E402
 from backend.daily_stats import DailyStats  # noqa: E402
 from backend.telegram_bot import TelegramBot  # noqa: E402
-from backend.voice import VoiceAnnouncer, VoiceStatusPublisher  # noqa: E402
+from backend.voice import EconomyStatusPublisher, VoiceAnnouncer, VoiceStatusPublisher  # noqa: E402
 from backend.ikea import AlertLamp, IkeaOutlet  # noqa: E402
 from backend.history_store import HistoryStore  # noqa: E402
 from backend.preferences import Preferences  # noqa: E402
@@ -53,7 +53,9 @@ notifier = AlertNotifier(telegram, sensor, settings, NOTIFY_CHECK_SEC, NOTIFY_CO
 presence = PresenceWatcher(telegram, sensor, notifier, history=history_store, settings=settings)
 notifier.presence = presence
 preferences = Preferences(PREFERENCES_FILE, voice, lamp, presence)
-voice_status = VoiceStatusPublisher(voice, sensor, settings, VOICE_STATUS_VAR, VOICE_STATUS_SEC)
+voice_status = (VoiceStatusPublisher(voice, sensor, settings, VOICE_STATUS_VAR, VOICE_STATUS_SEC) if VOICE_STATUS_ENABLED
+                else EconomyStatusPublisher(voice, sensor, settings, VOICE_STATUS_VAR, VOICE_STATUS_SEC,
+                                            state_path=VOICE_STATUS_STATE_FILE))
 bot = TelegramBot(telegram, notifier, sensor, settings, predictor, DailyStats(STATS_FILE), DAILY_SUMMARY_TIME,
                   history=history_store, preferences=preferences, presence=presence)
 
@@ -67,10 +69,7 @@ async def lifespan(app: FastAPI):
     notifier.start()
     presence.start()
     bot.start()
-    if VOICE_STATUS_ENABLED:
-        voice_status.start()
-    else:
-        voice_status.leave_paused_note()
+    voice_status.start()
     yield
     voice_status.stop()
     bot.stop()
@@ -278,7 +277,8 @@ def send_test_announcement():
 def get_voice_status():
     """The sentence Alexa reads for "Alexa, bedroom status", and whether it reached Voice Monkey."""
     return {
-        "enabled": voice.enabled and VOICE_STATUS_ENABLED,
+        "enabled": voice.enabled,
+        "mode": "live" if VOICE_STATUS_ENABLED else "free plan: timed snapshot, at most 3 updates a day",
         "variable": voice_status.variable,
         "text": voice_status.text,
         "last_error": voice_status.last_error,

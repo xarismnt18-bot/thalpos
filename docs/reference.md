@@ -43,7 +43,7 @@ Settings come from `.env` (copy `.env.example`); `config.py` has the full list.
 | `NOTIFY_COOLDOWN_MIN` | `30` | Minimum minutes between two messages for the same alert |
 | `DAILY_SUMMARY_TIME` | `09:00` | When the morning summary is sent |
 | `VOICE_QUIET_HOURS` / `LAMP_QUIET_HOURS` | `23:00-08:00` | Default quiet hours |
-| `VOICE_STATUS_ENABLED` | off | Keep the Alexa status sentence updated (paid Voice Monkey plan) |
+| `VOICE_STATUS_ENABLED` | off | Off: "bedroom status" is a timed snapshot, at most 3 updates a day (free plan). On: live, every minute (paid Voice Monkey plan) |
 | `API_RELOAD` | `false` | Reload the backend on code changes |
 
 Thresholds changed in the dashboard are saved to `data/settings.json` and override `.env`; **Reset to defaults** deletes that file. Notification settings are saved to `data/preferences.json`.

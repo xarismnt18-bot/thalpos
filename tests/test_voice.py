@@ -64,3 +64,79 @@ def test_voice_budget():
         v.spoke(f"k{i}", t0)
     assert not v.should_speak("temp_high", t0.replace(hour=17))  # 5 a day
     assert v.should_speak("temp_high", datetime(2026, 10, 21, 10, 0))  # new day
+
+
+# ---------- free-plan "bedroom status": timed snapshots, a few a day ----------
+def _economy(thresholds, sensor, tmp_path=None, voice=None):
+    calls = []
+    voice = voice or V.VoiceAnnouncer("tok", "dev", "")
+    voice.set_variable = lambda name, value: calls.append(value)
+    path = str(tmp_path / "vs.json") if tmp_path else None
+    p = V.EconomyStatusPublisher(voice, sensor, FakeSettings(thresholds), "THALPOS_STATUS", 60, state_path=path)
+    return p, calls
+
+
+def test_snapshot_sentence_says_when(thresholds):
+    s = V.snapshot_sentence(reading(23.4, 61), thresholds, datetime(2026, 10, 26, 16, 0))
+    assert s.startswith("At 4 PM the bedroom was 23 degrees, with 61 percent humidity.")
+    assert "comfort range" in s and "slash status" in s
+    s = V.snapshot_sentence(reading(23.4, 76), thresholds, datetime(2026, 10, 26, 9, 35))
+    assert s.startswith("At 9:35 AM") and "above your limit of 70" in s
+
+
+def test_economy_updates_only_on_change(thresholds):
+    sensor = FakeSensor(reading(22, 50))
+    p, calls = _economy(thresholds, sensor)
+    t = datetime(2026, 10, 26, 9, 0)
+    assert p.publish(now=t)                                   # first: state unknown -> sent
+    assert not p.publish(now=t.replace(minute=5))             # nothing changed
+    sensor.latest = reading(22.8, 54)
+    assert not p.publish(now=t.replace(hour=14))              # small drift: not worth a request
+    sensor.latest = reading(24.0, 50)
+    assert not p.publish(now=t.replace(hour=11))              # moved, but less than 4 h since the last
+    assert p.publish(now=t.replace(hour=14))                  # moved and 5 h later
+    sensor.latest = reading(24.0, 75)
+    assert p.publish(now=t.replace(hour=14, minute=10))       # humid: a change of state, sent at once
+    assert len(calls) == 3
+
+
+def test_economy_daily_cap_and_last_slot_for_state_changes(thresholds):
+    sensor = FakeSensor(reading(22, 50))
+    p, calls = _economy(thresholds, sensor)
+    t = datetime(2026, 10, 26, 8, 0)
+    assert p.publish(now=t)
+    sensor.latest = reading(25, 50)
+    assert p.publish(now=t.replace(hour=13))                  # 2nd: moved after 5 h
+    sensor.latest = reading(20, 50)
+    assert not p.publish(now=t.replace(hour=18))              # 3rd is kept for a change of state
+    sensor.latest = reading(20, 80)
+    assert p.publish(now=t.replace(hour=18, minute=5))        # humid -> uses the last one
+    sensor.latest = reading(20, 50)
+    assert not p.publish(now=t.replace(hour=19))              # cap reached for today
+    assert p.publish(now=datetime(2026, 10, 27, 8, 0))        # new day
+    assert len(calls) == 4
+
+
+def test_economy_shares_the_budget_with_spoken_alerts(thresholds):
+    voice = V.VoiceAnnouncer("tok", "dev", "")
+    t = datetime(2026, 10, 26, 8, 0)
+    for i in range(5):
+        voice.spoke(f"k{i}", t)
+    sensor = FakeSensor(reading(22, 50))
+    p, calls = _economy(thresholds, sensor, voice=voice)
+    assert p.publish(now=t)                                   # 5 alerts + 1 status = 6
+    sensor.latest = reading(22, 80)
+    assert not p.publish(now=t.replace(hour=9))               # the shared daily budget is spent
+    assert len(calls) == 1
+
+
+def test_economy_counts_survive_a_restart_and_shutdown_is_free(thresholds, tmp_path):
+    sensor = FakeSensor(reading(22, 50))
+    p, calls = _economy(thresholds, sensor, tmp_path)
+    t = datetime.now().replace(hour=9, minute=0)
+    assert p.publish(now=t)
+    p.stop()
+    p2, calls2 = _economy(thresholds, sensor, tmp_path)
+    assert not p2.publish(now=t.replace(minute=30))           # same state, remembered
+    assert p2.text.startswith("At 9 AM")
+    assert calls2 == [] and len(calls) == 1

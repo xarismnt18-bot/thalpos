@@ -87,6 +87,8 @@ VOICE_STATUS_VAR = os.getenv("VOICE_STATUS_VAR", "THALPOS_STATUS")
 # only 200 a month. Turn on (VOICE_STATUS_ENABLED=1) on a paid plan.
 VOICE_STATUS_ENABLED = os.getenv("VOICE_STATUS_ENABLED", "0") == "1"
 VOICE_STATUS_SEC = int(os.getenv("VOICE_STATUS_SEC", "60"))
+# Off (the default): a free-plan mode answers "bedroom status" with a timed snapshot,
+# updated only when something changes and at most 3 times a day.
 # Yesterday's summary is sent once a day, at or after this local time (HH:MM).
 # IKEA smart plug used as an alert lamp (optional; off until setup_ikea.bat ran)
 IKEA_HUB_IP = os.getenv("IKEA_HUB_IP") or None
@@ -141,6 +143,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 STATS_FILE = os.path.join(DATA_DIR, "daily_stats.json")
 HISTORY_DB = os.path.join(DATA_DIR, "history.db")
 ALERT_STATE_FILE = os.path.join(DATA_DIR, "alert_state.json")
+VOICE_STATUS_STATE_FILE = os.path.join(DATA_DIR, "voice_status.json")
 PREFERENCES_FILE = os.path.join(DATA_DIR, "preferences.json")
 MODEL_DIR = os.path.join(BASE_DIR, "models")
 OCCUPANCY_MODEL = os.path.join(MODEL_DIR, "occupancy_model.pkl")

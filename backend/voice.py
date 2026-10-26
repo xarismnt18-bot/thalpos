@@ -10,6 +10,7 @@ has stored a Voice Monkey token and speaker device in voice.env.
 """
 import json
 import logging
+import os
 import threading
 import time
 import urllib.error
@@ -82,6 +83,44 @@ def status_sentence(latest: dict, thresholds) -> str:
     return " ".join(parts)
 
 
+COMFORT_KEYS = ("humidity_high", "humidity_low", "temp_high", "temp_low")
+
+
+def comfort_state(latest: dict, thresholds) -> str:
+    """What changes the answer: which comfort limits are crossed, or 'offline'."""
+    if not latest.get("sensor_online") or latest.get("temperature") is None or latest.get("humidity") is None:
+        return "offline"
+    keys = {a.key for a in active_alerts(latest, thresholds)}
+    return ",".join(k for k in COMFORT_KEYS if k in keys) or "ok"
+
+
+def spoken_time(when: datetime) -> str:
+    return when.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ")
+
+
+def snapshot_sentence(latest: dict, thresholds, when: datetime) -> str:
+    """The free-plan answer: a reading with the time it was taken, in the past tense."""
+    room = (latest.get("room") or "room").lower()
+    at = spoken_time(when)
+    temp, hum = latest.get("temperature"), latest.get("humidity")
+    if comfort_state(latest, thresholds) == "offline":
+        return f"At {at} the {room} sensor was not sending data."
+    keys = {a.key for a in active_alerts(latest, thresholds)}
+    parts = [f"At {at} the {room} was {temp:.0f} degrees, with {hum:.0f} percent humidity."]
+    if "humidity_high" in keys:
+        parts.append(f"That was above your limit of {thresholds.HUMIDITY_HIGH:g} percent.")
+    elif "humidity_low" in keys:
+        parts.append(f"The air was dry, below {thresholds.HUMIDITY_LOW:g} percent.")
+    if "temp_high" in keys:
+        parts.append(f"It was warmer than your limit of {thresholds.TEMP_HIGH:g} degrees.")
+    elif "temp_low" in keys:
+        parts.append(f"It was colder than your limit of {thresholds.TEMP_LOW:g} degrees.")
+    if not keys & set(COMFORT_KEYS):
+        parts.append("Everything was in the comfort range.")
+    parts.append("For live readings, send slash status to the Telegram bot.")
+    return " ".join(parts)
+
+
 OFFLINE_SENTENCE = "The smart home server is switched off, so I have no live readings."
 PAUSED_SENTENCE = ("Live room status is paused to stay within the Voice Monkey free plan. "
                    "Send slash status to the Telegram bot for the current readings.")
@@ -119,8 +158,14 @@ class VoiceAnnouncer:
         last = self._last_spoken.get(key)
         return key is None or last is None or (now - last).total_seconds() >= self.REPEAT_SEC
 
+    def spoken_on(self, day) -> int:
+        """Alerts spoken on that day (0 for any other day than the one being counted)."""
+        return self._spoken_today if self._budget_day == day else 0
+
     def spoke(self, key: str | None, now: datetime | None = None) -> None:
         now = now or datetime.now()
+        if self._budget_day != now.date():
+            self._budget_day, self._spoken_today = now.date(), 0
         self._spoken_today += 1
         if key:
             self._last_spoken[key] = now
@@ -226,3 +271,103 @@ class VoiceStatusPublisher:
             return False
         self._last_text, self._last_push, self.last_error = text, time.monotonic(), None
         return True
+
+
+class EconomyStatusPublisher(VoiceStatusPublisher):
+    """The free-plan version of "Alexa, bedroom status" (Voice Monkey free plan:
+    200 requests a month, shared with spoken alerts).
+
+    Instead of every minute, the sentence is updated only when something worth
+    saying changed, at most DAILY_MAX times a day, and it says when the reading
+    was taken. It goes out when a comfort limit is crossed or cleared, or when
+    the reading has moved by MOVE_TEMP degrees / MOVE_HUM points and the last
+    update is at least MIN_GAP_SEC old; the last update of the day is kept for
+    a change of state. Counts survive restarts (state_path), and a shutdown
+    spends nothing: the last sentence carries its own time.
+    """
+
+    DAILY_MAX = 3
+    SHARED_DAILY_MAX = 6  # status updates + spoken alerts: ~200 Voice Monkey requests a month
+    MIN_GAP_SEC = 4 * 3600
+    MOVE_TEMP = 1.5
+    MOVE_HUM = 8
+
+    def __init__(self, voice, sensor, settings, variable: str, interval_sec: int, state_path: str | None = None):
+        super().__init__(voice, sensor, settings, variable, interval_sec)
+        self._state_path = state_path
+        self._day = None
+        self._count = 0
+        self._last_at = 0.0  # wall clock of the last update
+        self._last_state: str | None = None
+        self._last_temp: float | None = None
+        self._last_hum: float | None = None
+        self._load()
+
+    def start(self) -> None:
+        if not self._voice.enabled:
+            return
+        self._stop.clear()
+        self._started = True
+        threading.Thread(target=self._run, name="voice-status", daemon=True).start()
+        logger.info("Alexa status: free-plan mode, at most %d updates a day in Voice Monkey variable %s",
+                    self.DAILY_MAX, self.variable)
+
+    def stop(self) -> None:
+        self._stop.set()  # no "server is off" request: the sentence says when it was true
+
+    def publish(self, force: bool = False, now: datetime | None = None) -> bool:
+        now = now or datetime.now()
+        latest, thresholds = self._sensor.latest, self._settings.thresholds
+        if not latest.get("broker_connected"):
+            return False  # the backend itself is in trouble: keep the last good sentence
+        if self._day != now.date().isoformat():
+            self._day, self._count = now.date().isoformat(), 0
+        left = min(self.DAILY_MAX - self._count, self.SHARED_DAILY_MAX - self._count - self._voice.spoken_on(now.date()))
+        if left <= 0:
+            return False
+        state = comfort_state(latest, thresholds)
+        changed = state != self._last_state
+        moved = (state != "offline" and self._last_temp is not None and self._last_hum is not None
+                 and (abs(latest["temperature"] - self._last_temp) >= self.MOVE_TEMP
+                      or abs(latest["humidity"] - self._last_hum) >= self.MOVE_HUM))
+        old = now.timestamp() - self._last_at >= self.MIN_GAP_SEC
+        if not (force or changed or (moved and old and left > 1)):  # keep the last one for a change of state
+            return False
+        if not self._push(snapshot_sentence(latest, thresholds, now)):
+            return False
+        self._count += 1
+        self._last_at, self._last_state = now.timestamp(), state
+        self._last_temp, self._last_hum = latest.get("temperature"), latest.get("humidity")
+        self._save()
+        return True
+
+    def _load(self) -> None:
+        if not self._state_path:
+            return
+        try:
+            with open(self._state_path, encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return
+        self._day, self._count = d.get("day"), int(d.get("count", 0))
+        self._last_at, self._last_state = float(d.get("last_at", 0)), d.get("state")
+        self._last_temp, self._last_hum = d.get("temperature"), d.get("humidity")
+        self._last_text = d.get("text")
+
+    def _save(self) -> None:
+        if not self._state_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self._state_path) or ".", exist_ok=True)
+            tmp = self._state_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"day": self._day, "count": self._count, "last_at": self._last_at,
+                           "state": self._last_state, "temperature": self._last_temp,
+                           "humidity": self._last_hum, "text": self._last_text}, f)
+            os.replace(tmp, self._state_path)
+        except OSError as e:
+            logger.warning("Alexa status: could not save state: %s", e)
+
+    @property
+    def text(self) -> str:
+        return self._last_text or "No update sent to Alexa yet."
