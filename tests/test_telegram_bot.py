@@ -76,3 +76,20 @@ def test_presence_command(bot, tmp_path):
     bot._history.visit_started(now - 300)
     text = bot.handle("/presence")
     assert "today" in text and "Last 7 days" in text and "5 min" in text
+
+
+def test_sleep_command(bot, tmp_path):
+    from datetime import datetime, timedelta
+    from backend.history_store import HistoryStore
+    bot._history = HistoryStore(str(tmp_path / "s.db"))
+    assert "No night with readings yet" in bot.handle("/sleep")
+    morning = datetime(2026, 10, 20)  # a night without a daylight-saving change
+    start, end = (morning - timedelta(hours=1)).timestamp(), (morning + timedelta(hours=7)).timestamp()
+    ts = start - 3600
+    while ts <= end + 3600:
+        bot._history.record(reading(22.0, 55.0), ts=ts)
+        ts += 30
+    bot._history.visit_started(start)
+    bot._history.visit_ended(end)
+    text = bot.sleep_text(now=(morning + timedelta(hours=13)).timestamp())
+    assert "room score 80/100" in text and "23:00–07:00" in text and "Too warm for 8.0 h" in text

@@ -128,6 +128,17 @@ MOLD_EXPOSURE_HOURS = float(os.getenv("MOLD_EXPOSURE_HOURS", "3"))
 
 
 # =========================
+# SLEEP (the Sleep page rates the bedroom overnight against these)
+# =========================
+SLEEP_IDEAL = {
+    "temp_low": float(os.getenv("SLEEP_TEMP_LOW", "16")),
+    "temp_high": float(os.getenv("SLEEP_TEMP_HIGH", "20")),
+    "hum_low": float(os.getenv("SLEEP_HUM_LOW", "40")),
+    "hum_high": float(os.getenv("SLEEP_HUM_HIGH", "60")),
+}
+
+
+# =========================
 # PREDICTIONS
 # =========================
 PREDICTION_MINUTES_AHEAD = int(os.getenv("PREDICTION_MINUTES_AHEAD", "10"))

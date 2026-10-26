@@ -40,6 +40,8 @@ Settings come from `.env` (copy `.env.example`); `config.py` has the full list.
 | `HUMIDITY_HIGH` / `HUMIDITY_LOW` | `70` / `35` | Initial humidity limits (%) |
 | `HUMIDITY_HOLD_MIN` | `20` | Minutes above the humidity limit before *humid* is sent (critical humidity is sent at once) |
 | `MOLD_EXPOSURE_HOURS` | `3` | Hours above the humidity limit without a break before the mold-risk alert |
+| `SLEEP_TEMP_LOW` / `SLEEP_TEMP_HIGH` | `16` / `20` | Ideal bedroom temperature overnight (°C), for the Sleep page |
+| `SLEEP_HUM_LOW` / `SLEEP_HUM_HIGH` | `40` / `60` | Ideal humidity overnight (%) |
 | `NOTIFY_COOLDOWN_MIN` | `30` | Minimum minutes between two messages for the same alert |
 | `DAILY_SUMMARY_TIME` | `09:00` | When the morning summary is sent |
 | `VOICE_QUIET_HOURS` / `LAMP_QUIET_HOURS` | `23:00-08:00` | Default quiet hours |

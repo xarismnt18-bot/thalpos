@@ -39,6 +39,7 @@ All three are in **Settings → Alerts & quiet hours → Someone in the room**.
 | `/today` | Today's min, max, average and time out of comfort |
 | `/night` | Hour by hour for the last 10 hours with a chart (`/night 24` for a day) |
 | `/presence` | Time someone was in the room today and on each of the last 7 days |
+| `/sleep` | How the bedroom was last night: room score, temperature and humidity, a tip, and the last 7 nights |
 | `/mute 2h` | Pause all messages (`30m`, `2h`, `1d`; default 1 hour) |
 | `/unmute` | Resume messages |
 | `/voice on`, `/voice off`, `/voice test`, `/voice status` | Alexa announcements |

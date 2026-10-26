@@ -17,7 +17,7 @@ from config import (  # noqa: E402
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTIFY_CHECK_SEC, NOTIFY_COOLDOWN_MIN,
     DAILY_SUMMARY_TIME, STATS_FILE, HISTORY_DB, ALERT_STATE_FILE, PREFERENCES_FILE, VOICE_STATUS_STATE_FILE,
     VOICEMONKEY_TOKEN, VOICEMONKEY_DEVICE, VOICE_QUIET_HOURS, VOICE_STATUS_VAR, VOICE_STATUS_SEC, VOICE_STATUS_ENABLED,
-    IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID, LAMP_QUIET_HOURS, HUMIDITY_HOLD_MIN, MOLD_EXPOSURE_HOURS,
+    IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID, LAMP_QUIET_HOURS, HUMIDITY_HOLD_MIN, MOLD_EXPOSURE_HOURS, SLEEP_IDEAL,
 )
 from ai.mqtt_client import SharedMQTTClient  # noqa: E402
 from ai.engines import (  # noqa: E402
@@ -33,6 +33,7 @@ from backend.telegram_bot import TelegramBot  # noqa: E402
 from backend.voice import EconomyStatusPublisher, VoiceAnnouncer, VoiceStatusPublisher  # noqa: E402
 from backend.ikea import AlertLamp, IkeaOutlet  # noqa: E402
 from backend.history_store import HistoryStore  # noqa: E402
+from backend.sleep import sleep_nights, tip as sleep_tip  # noqa: E402
 from backend.preferences import Preferences  # noqa: E402
 from backend.presence import PresenceWatcher  # noqa: E402
 
@@ -118,6 +119,15 @@ def get_latest():
 def get_presence_daily(days: int = Query(7, ge=1, le=30)):
     """Minutes someone was in the room per day (from the radar), oldest first."""
     return {"days": history_store.daily_presence(days), "in_now": presence.occupied, "since": presence.since}
+
+
+@app.get("/sleep")
+def get_sleep(nights: int = Query(7, ge=1, le=30)):
+    """How the bedroom was overnight, newest night first (Sleep page)."""
+    out = sleep_nights(history_store, nights, SLEEP_IDEAL)
+    for night in out:
+        night["tip"] = sleep_tip(night, SLEEP_IDEAL)
+    return {"ideal": SLEEP_IDEAL, "nights": out}
 
 
 @app.get("/history")

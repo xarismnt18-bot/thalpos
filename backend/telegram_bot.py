@@ -5,6 +5,7 @@ Commands (only the chat saved by setup_telegram.bat gets answers):
     /status          current readings, trend and active alerts
     /today           today's min / max / average and time out of range
     /night [hours]   hour-by-hour readings of the last night (default 10 h)
+    /sleep           how the bedroom was last night, and the last 7 nights
     /mute [30m|2h]   pause alert messages (default 1 hour)
     /unmute          resume alert messages
     /voice on|off|test|status   Alexa: spoken alerts, test, read the status aloud
@@ -22,6 +23,8 @@ from backend.alerts import active_alerts
 from backend.daily_stats import DailyStats, format_day, yesterday
 from backend import charts
 from backend.history_store import format_night, humid_hours
+from backend.sleep import sleep_nights, tip as sleep_tip
+from config import SLEEP_IDEAL
 from backend.voice import status_sentence
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ HELP = (
     "/today – today's range and time out of comfort\n"
     "/night – hour by hour, last 10 h (/night 24 for a day)\n"
     "/presence – time someone was in the room, today and this week\n"
+    "/sleep – how the bedroom was last night\n"
     "/mute 2h – pause alerts (30m, 2h, 1d; default 1h)\n"
     "/unmute – resume alerts\n"
     "/voice on | off | test – spoken alerts on Alexa\n"
@@ -194,6 +198,8 @@ class TelegramBot:
             return format_night(self._history, self._settings.thresholds, hours=hours)
         if command == "/presence":
             return self.presence_text()
+        if command == "/sleep":
+            return self.sleep_text()
         if command == "/mute":
             seconds = parse_duration(arg)
             if seconds is None:
@@ -263,6 +269,34 @@ class TelegramBot:
             return "🔊 Your Echo is reading the room status."
         state = "on" if voice.on else "off"
         return f"Voice alerts are {state} (quiet hours {voice.quiet_hours}). Use /voice on, /voice off, /voice test or /voice status."
+
+    def sleep_text(self, now: float | None = None) -> str:
+        if self._history is None:
+            return "History is not available."
+        nights = sleep_nights(self._history, 7, SLEEP_IDEAL, now)
+        last = next((n for n in nights if n.get("score") is not None), None)
+        if last is None:
+            return ("😴 No night with readings yet. The PC has to stay on overnight "
+                    "(keep_awake.bat) for the sensor's readings to be stored.")
+        hm = lambda ts: datetime.fromtimestamp(ts).strftime("%H:%M")  # noqa: E731
+        t, h = last["temperature"], last["humidity"]
+        lines = [
+            f"😴 Night to {datetime.strptime(last['date'], '%Y-%m-%d'):%a %d/%m}: room score {last['score']}/100",
+            f"{hm(last['start'])}–{hm(last['end'])} ({minutes_text(last['minutes'])})"
+            + (", estimated" if last["source"] == "estimated" else "")
+            + (f", left the room {last['interruptions']}×" if last.get("interruptions") else ""),
+            f"🌡️ {t['avg']:.1f}°C ({t['min']:.1f}–{t['max']:.1f}) · 💧 {h['avg']:.0f}% ({h['min']:.0f}–{h['max']:.0f})",
+            f"Ideal: {SLEEP_IDEAL['temp_low']:g}–{SLEEP_IDEAL['temp_high']:g}°C, "
+            f"{SLEEP_IDEAL['hum_low']:g}–{SLEEP_IDEAL['hum_high']:g}%",
+        ]
+        advice = sleep_tip(last, SLEEP_IDEAL)
+        if advice:
+            lines.append(f"💡 {advice}")
+        scored = [n for n in nights if n.get("score") is not None]
+        if len(scored) > 1:
+            lines.append("Last nights: " + "  ".join(
+                f"{datetime.strptime(n['date'], '%Y-%m-%d'):%a} {n['score']}" for n in reversed(scored)))
+        return "\n".join(lines)
 
     def presence_text(self, now: float | None = None) -> str:
         if self._history is None:

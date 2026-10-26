@@ -61,6 +61,7 @@ function nearestIndex(points, ts) {
  */
 export default function TimeSeriesChart({
   title, unit, color, points, band, hoverTs, onHover, decimals = 1, gapSec = Infinity, longRange = false,
+  bandLabel = "Comfort range",
 }) {
   const [frameRef, width] = useElementWidth();
   const innerW = Math.max(width - MARGIN.left - MARGIN.right, 10);
@@ -184,7 +185,7 @@ export default function TimeSeriesChart({
       {band && (
         <p className="ts-chart__legend">
           <i className="ts-chart__key" style={{ background: color }} /> {title}
-          <i className="ts-chart__key ts-chart__key--band" /> Comfort range {band.low}–{band.high}{unit}
+          <i className="ts-chart__key ts-chart__key--band" /> {bandLabel} {band.low}–{band.high}{unit}
         </p>
       )}
 

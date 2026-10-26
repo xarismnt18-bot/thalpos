@@ -192,6 +192,61 @@ function demoAlertLog() {
   return list;
 }
 
+// a believable week of nights for the Sleep page (same score maths as backend/sleep.py)
+const SLEEP_IDEAL = { temp_low: 16, temp_high: 20, hum_low: 40, hum_high: 60 };
+const DEMO_NIGHTS = [  // [bed hh:mm, up hh:mm, temp at bedtime, humidity, interruptions | null = estimated, has readings]
+  [[23, 40], [7, 10], 22.4, 63, 1, true], [[0, 15], [7, 45], 21.6, 58, 0, true], [[23, 5], [6, 50], 23.1, 66, 2, true],
+  [[23, 0], [7, 0], 21.0, 55, null, true], [[0, 40], [8, 5], 20.6, 52, 0, true], [[23, 30], [7, 20], 22.0, 61, 1, false],
+  [[23, 55], [7, 30], 21.2, 57, 1, true],
+];
+function demoSleep() {
+  const out = [];
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getHours() < 1 ? 1 : 0));
+  DEMO_NIGHTS.forEach(([bed, up, t0, h0, interruptions, has], i) => {
+    const morning = new Date(first.getFullYear(), first.getMonth(), first.getDate() - i);
+    const iso = `${morning.getFullYear()}-${String(morning.getMonth() + 1).padStart(2, "0")}-${String(morning.getDate()).padStart(2, "0")}`;
+    const start = new Date(morning.getFullYear(), morning.getMonth(), morning.getDate() - (bed[0] >= 12 ? 1 : 0), bed[0], bed[1]).getTime() / 1000;
+    const end = new Date(morning.getFullYear(), morning.getMonth(), morning.getDate(), up[0], up[1]).getTime() / 1000;
+    const source = interruptions == null ? "estimated" : "radar";
+    if (!has) { out.push({ date: iso, source, score: null, start, end, missing: "no readings", tip: null }); return; }
+    const series = [];
+    for (let ts = Math.ceil(start / 600) * 600; ts <= end; ts += 600) {
+      const f = (ts - start) / (end - start);   // the room cools through the night, humidity creeps up
+      series.push({ ts, temperature: +(t0 - 1.6 * f + 0.15 * Math.sin(ts / 1500)).toFixed(2), humidity: +(h0 + 4 * f + Math.sin(ts / 2100)).toFixed(1) });
+    }
+    const ts = series.map((p) => p.temperature), hs = series.map((p) => p.humidity);
+    const outside = { warm: 0, cold: 0, humid: 0, dry: 0 };
+    let score = 0;
+    series.forEach((p) => {
+      const tOut = Math.max(SLEEP_IDEAL.temp_low - p.temperature, p.temperature - SLEEP_IDEAL.temp_high, 0);
+      const hOut = Math.max(SLEEP_IDEAL.hum_low - p.humidity, p.humidity - SLEEP_IDEAL.hum_high, 0);
+      score += 100 - Math.min(tOut * 10, 50) - Math.min(hOut * 2.5, 50);
+      outside.warm += p.temperature > SLEEP_IDEAL.temp_high ? 10 : 0;
+      outside.cold += p.temperature < SLEEP_IDEAL.temp_low ? 10 : 0;
+      outside.humid += p.humidity > SLEEP_IDEAL.hum_high ? 10 : 0;
+      outside.dry += p.humidity < SLEEP_IDEAL.hum_low ? 10 : 0;
+    });
+    const avg = (a) => Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10;
+    const worst = Object.entries(outside).sort((a, b) => b[1] - a[1])[0];
+    const hours = `${(worst[1] / 60).toFixed(1)} h`;
+    const tip = worst[1] < 30 ? "The room stayed in the ideal range for sleeping." : {
+      warm: `Too warm for ${hours}: cool the room before bed (air it, or the AC around ${SLEEP_IDEAL.temp_high} °C).`,
+      humid: `Too humid for ${hours}: air the room before bed, and a dehumidifier would help.`,
+      cold: `Too cold for ${hours}: warm the room a little before bed, or add a blanket.`,
+      dry: `Too dry for ${hours}: a bowl of water or a humidifier would help.`,
+    }[worst[0]];
+    out.push({
+      date: iso, source, start, end, minutes: Math.round((end - start) / 60), interruptions,
+      score: Math.round(score / series.length),
+      temperature: { avg: avg(ts), min: Math.min(...ts), max: Math.max(...ts) },
+      humidity: { avg: avg(hs), min: Math.min(...hs), max: Math.max(...hs) },
+      minutes_outside: outside, series, tip,
+    });
+  });
+  return { ideal: SLEEP_IDEAL, nights: out };
+}
+
 const config = () => ({ thresholds: { ...thresholds }, mqtt_topic: "smartroom/dht11" });
 
 /** Same contract as config.js request(): resolves to JSON or throws Error(detail). */
@@ -233,6 +288,7 @@ export async function demoRequest(path, options = {}) {
   }
   if (route === "/alerts/history") return demoAlertLog();
   if (route === "/presence/daily") return demoPresenceDays();
+  if (route === "/sleep") return demoSleep();
   if (route === "/history/range") {
     const params = new URLSearchParams(path.split("?")[1] || "");
     const hours = Number(params.get("hours")) || 24;

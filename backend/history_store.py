@@ -115,6 +115,15 @@ class HistoryStore:
             (last,) = self._db.execute("SELECT MAX(ts) FROM readings").fetchone()
             self._db.execute("UPDATE visits SET ended = MAX(started, ?) WHERE ended IS NULL", (last or 0,))
 
+    def visits_between(self, since: float, until: float, now: float | None = None) -> list[tuple[float, float]]:
+        """(started, ended) of every visit overlapping [since, until]; an open visit ends now."""
+        now = now or time.time()
+        with self._lock:
+            return self._db.execute(
+                "SELECT started, COALESCE(ended, ?) FROM visits WHERE started <= ? AND COALESCE(ended, ?) >= ? ORDER BY started",
+                (now, until, now, since),
+            ).fetchall()
+
     def daily_presence(self, days: int = 7, now: float | None = None) -> list[dict]:
         """Minutes someone was in the room on each of the last `days` days, oldest first."""
         now = now or time.time()

@@ -1935,3 +1935,41 @@ body { background: var(--bg); font-family: Manrope, system-ui, sans-serif; }
   .imm-person-tag span { animation: imm-person-blink 1.6s ease-in-out infinite; }
 }
 @keyframes imm-person-blink { 50% { opacity: 0.35; } }
+
+/* ---------- Sleep page ---------- */
+.sleep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.sleep-score--good { color: var(--good); }
+.sleep-score--fair { color: var(--warning); }
+.sleep-score--poor { color: var(--critical); }
+.sleep-night__score { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 6px; }
+.sleep-night__score .big-score { font-size: 52px; line-height: 1; }
+.sleep-night__score .big-score small { font-size: 18px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+.sleep-grade { font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid; }
+.sleep-grade--good { color: var(--good); border-color: rgba(34, 197, 94, 0.5); }
+.sleep-grade--fair { color: var(--warning); border-color: rgba(250, 204, 21, 0.5); }
+.sleep-grade--poor { color: var(--critical); border-color: rgba(239, 68, 68, 0.5); }
+.sleep-night__when { color: var(--ink-2); margin: 0 0 14px; font-variant-numeric: tabular-nums; }
+.sleep-night__note { color: var(--muted); }
+.sleep-night__range { color: var(--muted); font-size: 13px !important; font-weight: 500 !important; font-variant-numeric: tabular-nums; }
+.sleep-night__outside { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.sleep-night__outside span { color: var(--muted); font-size: 13px; }
+.sleep-night__outside b { font-variant-numeric: tabular-nums; }
+.sleep-night__ok { color: var(--good); margin: 14px 0 0; }
+.sleep-night__tip { margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid var(--cyan); background: var(--surface-2); color: var(--ink-2); }
+.sleep-bars { width: 100%; max-width: 720px; height: auto; display: block; }
+.sleep-bars__hit { fill: transparent; }
+.sleep-bars__night { cursor: pointer; outline: none; }
+.sleep-bars__night.is-empty { cursor: default; }
+.sleep-bars__bar { fill: rgba(125, 227, 255, 0.35); transition: fill var(--duration) var(--ease); }
+.sleep-bars__night.is-good .sleep-bars__bar { fill: rgba(34, 197, 94, 0.45); }
+.sleep-bars__night.is-fair .sleep-bars__bar { fill: rgba(250, 204, 21, 0.45); }
+.sleep-bars__night.is-poor .sleep-bars__bar { fill: rgba(239, 68, 68, 0.45); }
+.sleep-bars__night.is-good.is-selected .sleep-bars__bar { fill: var(--good); }
+.sleep-bars__night.is-fair.is-selected .sleep-bars__bar { fill: var(--warning); }
+.sleep-bars__night.is-poor.is-selected .sleep-bars__bar { fill: var(--critical); }
+.sleep-bars__night.is-selected .presence-chart__day { fill: var(--ink); font-weight: 700; }
+.sleep-bars__night:focus-visible .sleep-bars__hit { stroke: var(--cyan); stroke-width: 2; }
+.sleep-bars__none { fill: var(--muted); font-size: 14px; }
+.sleep-empty p { color: var(--ink-2); max-width: 64ch; line-height: 1.6; }
+@media (max-width: 767.98px) { .sleep-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .sleep-bars__bar { transition: none; } }

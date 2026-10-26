@@ -14,6 +14,7 @@ import Reports from "./components/Reports";
 import Settings from "./components/Settings";
 import AIBrain from "./components/AIBrain";
 import Predictions from "./components/Predictions";
+import Sleep from "./components/Sleep";
 
 function formatReading(value) {
   return value != null ? Number(value).toFixed(1) : "--";
@@ -47,6 +48,7 @@ export default function App() {
         {active === "DASHBOARD" && <Dashboard telemetry={telemetry} room={room} />}
         {active === "FLOORPLAN" && <Floorplan room={room} temp={temp} humidity={humidity} health={health} />}
         {active === "ANALYTICS" && <Analytics telemetry={telemetry} room={room} />}
+        {active === "SLEEP" && <Sleep room={room} />}
         {active === "MQTT STREAM" && (
           <MqttPanel room={room} latest={latest} health={health} lastUpdate={lastUpdate} connected={status.sensor} />
         )}

@@ -11,6 +11,7 @@ Open http://localhost:5173 on the PC, or the Tailscale link on the phone (see [R
 | **Dashboard** | Full-screen 3D twin of the home with the live readings, trend, alerts, outside weather and the packet stream. Views: temperature, humidity, X-ray. Click a room to fly to it. The live room turns red and pulses on an alert, and grey when there is no data. While the radar sees someone, a hologram stands in the room with how long they have been there |
 | **Floorplan** | 2D overview of the rooms |
 | **Analytics** | Temperature and humidity charts: live hour, 24 hours, 7 or 30 days. Gaps (sensor off) stay empty. Below them, **time in the room** for each of the last 7 days, from the radar |
+| **Sleep** | How the bedroom was overnight, night by night: a room score out of 100 (100 = the whole night inside the ideal 16–20 °C and 40–60 %), when you went to bed and got up (from the radar; 23:00–07:00 marked *estimated* without it), times you left the room, average and range, time too warm / cold / humid / dry, one tip, the last 7 nights, and the night hour by hour. The score rates the room, not your sleep. Nights when the PC was off show no score |
 | **AI Brain** | Rule-based comfort analysis and deviation check |
 | **Predictions** | 10-minute forecasts with confidence |
 | **Energy** | **Simulated** power estimate (no power meter connected) |

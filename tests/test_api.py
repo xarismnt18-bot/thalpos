@@ -59,3 +59,11 @@ def test_presence_daily_endpoint():
     assert r.status_code == 200
     body = r.json()
     assert len(body["days"]) == 3 and "in_now" in body
+
+
+def test_sleep_endpoint():
+    r = client.get("/sleep?nights=3")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["nights"]) == 3 and set(body["ideal"]) == {"temp_low", "temp_high", "hum_low", "hum_high"}
+    assert all("tip" in n and "date" in n for n in body["nights"])
