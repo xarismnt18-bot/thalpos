@@ -48,6 +48,27 @@ telegram = TelegramClient(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 voice = VoiceAnnouncer(VOICEMONKEY_TOKEN, VOICEMONKEY_DEVICE, VOICE_QUIET_HOURS)
 lamp = AlertLamp(IkeaOutlet(IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID), LAMP_QUIET_HOURS)
 history_store = HistoryStore(HISTORY_DB)
+
+
+_backlog_seen = {"stored": 0, "first": None}
+
+
+def store_backlog(room: str, rows: list) -> None:
+    """Readings the board kept while this PC was asleep or off (firmware 3.2+).
+    They arrive in chunks of 25; one log line once the last (shorter) chunk is in."""
+    stored, _visits = history_store.record_backlog(room, rows)
+    seen = _backlog_seen
+    seen["stored"] += stored
+    seen["first"] = seen["first"] or rows[0][0]
+    if len(rows) < 25 and seen["stored"]:
+        logger.info("Backlog: stored %d readings the sensor kept while this PC was away (%s to %s)", seen["stored"],
+                    datetime.fromtimestamp(seen["first"]).strftime("%a %H:%M"),
+                    datetime.fromtimestamp(rows[-1][0]).strftime("%a %H:%M"))
+    if len(rows) < 25:
+        seen["stored"], seen["first"] = 0, None
+
+
+sensor.on_backlog = store_backlog
 notifier = AlertNotifier(telegram, sensor, settings, NOTIFY_CHECK_SEC, NOTIFY_COOLDOWN_MIN, voice=voice, lamp=lamp,
                          history=history_store, state_path=ALERT_STATE_FILE,
                          humidity_hold_min=HUMIDITY_HOLD_MIN, mold_hours=MOLD_EXPOSURE_HOURS)

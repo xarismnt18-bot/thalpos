@@ -40,16 +40,17 @@ On a breadboard, every pin of a part goes in its own row: the five holes of a ro
 
 ## What the firmware does
 
-`firmware/esp8266_dht11/esp8266_dht11.ino`, version 3.0:
+`firmware/esp8266_dht11/esp8266_dht11.ino`, version 3.2:
 
 - At boot it lists the I2C devices it finds, then uses an SHT31 if there is one, otherwise the DHT11 on `D4`. An OLED is used if found.
 - Every 3 seconds it reads the sensor and publishes a JSON message on `smartroom/dht11`:
   ```json
   {"room": "Bedroom", "temperature": 23.4, "humidity": 51.0, "sensor": "SHT31",
-   "presence": true, "ip": "192.168.1.16", "wifi": "Home", "rssi": -62, "fw": "3.0"}
+   "presence": true, "ip": "192.168.1.16", "wifi": "Home", "rssi": -62, "fw": "3.2"}
   ```
   A change in presence is sent immediately.
 - It keeps reading while offline, so the OLED stays live, and sends again once it is connected.
+- **Nothing is lost while the PC sleeps.** While the broker can't be reached (the PC asleep, switched off or restarting), it keeps a reading every 30 seconds in RAM, up to 10 hours, with the radar's presence. When the broker is back it sends them on `smartroom/dht11/backlog`, 25 per message, as `{"room": "Bedroom", "readings": [[age_sec, temperature, humidity, presence], ...]}`. The board has no clock, so it sends each reading's age and the backend works out when it was taken. The backend stores them in the history at that time, never over a reading it already has, and rebuilds the time someone was in the room from the presence flags. The night then shows up on the Sleep page as if the PC had been on. Over 10 hours, the oldest readings make room for new ones; a reboot of the board (or a power cut) loses what it held.
 - It listens for the backend's discovery beacon (UDP 18831) and connects to whichever PC sent it. `MQTT_SERVER` in `secrets.h` is only the first guess.
 - The OLED is dimmed and shifts its picture by a pixel every few minutes to avoid burn-in.
 

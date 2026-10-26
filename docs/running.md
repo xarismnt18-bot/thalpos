@@ -32,4 +32,4 @@ The link uses HTTPS and works only on your own Tailscale devices. The setting su
 
 ## A laptop as the server
 
-Thalpos stops while the PC sleeps: no alerts, no remote dashboard. `keep_awake.bat` (asks for admin) sets the plugged-in power plan so the laptop never sleeps, closing the lid does nothing and the screen turns off after 2 minutes. Battery settings are unchanged. Undo it in Settings → System → Power.
+Thalpos stops while the PC sleeps: no alerts, no remote dashboard. The readings themselves are not lost: the sensor (firmware 3.2) keeps up to 10 hours of them and sends them when the PC wakes up, so charts and the Sleep page have no holes. `keep_awake.bat` (asks for admin) sets the plugged-in power plan so the laptop never sleeps, closing the lid does nothing and the screen turns off after 2 minutes. Battery settings are unchanged. Undo it in Settings → System → Power.

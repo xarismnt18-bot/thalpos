@@ -115,6 +115,45 @@ class HistoryStore:
             (last,) = self._db.execute("SELECT MAX(ts) FROM readings").fetchone()
             self._db.execute("UPDATE visits SET ended = MAX(started, ?) WHERE ended IS NULL", (last or 0,))
 
+    def record_backlog(self, room: str, rows: list[tuple[float, float, float, bool]]) -> tuple[int, int]:
+        """Readings the board kept while this PC was asleep or off (firmware 3.2+).
+        Stores them at the time they were taken (never over a reading already
+        stored), and turns runs of presence into visits where none were recorded.
+        Returns (readings stored, visits added)."""
+        if not rows:
+            return 0, 0
+        with self._lock, self._db:
+            before = self._db.total_changes
+            self._db.executemany("INSERT OR IGNORE INTO readings VALUES (?, ?, ?, ?)",
+                                 [(ts, room, t, h) for ts, t, h, _p in rows])
+            stored = self._db.total_changes - before
+        visits = 0
+        for start, end in _presence_runs(rows):
+            visits += self._add_visit_gaps(start, end)
+        return stored, visits
+
+    def _add_visit_gaps(self, start: float, end: float) -> int:
+        """Adds [start, end] as visits, only where no recorded visit covers it already."""
+        with self._lock, self._db:
+            covered = self._db.execute(
+                "SELECT started, COALESCE(ended, ?) FROM visits WHERE started < ? AND COALESCE(ended, ?) > ? ORDER BY started",
+                (end, end, end, start),
+            ).fetchall()
+            added, cursor = 0, start
+            for s, e in covered + [(end, end)]:
+                if s - cursor >= 1:
+                    # the backlog arrives in chunks: continue a visit that ended right before
+                    joined = self._db.execute(
+                        "UPDATE visits SET ended = ? WHERE ended BETWEEN ? AND ?", (min(s, end), cursor - 2 * BACKLOG_STEP_SEC, cursor),
+                    ).rowcount
+                    if not joined:
+                        self._db.execute("INSERT INTO visits (started, ended) VALUES (?, ?)", (cursor, min(s, end)))
+                        added += 1
+                cursor = max(cursor, e)
+                if cursor >= end:
+                    break
+            return added
+
     def visits_between(self, since: float, until: float, now: float | None = None) -> list[tuple[float, float]]:
         """(started, ended) of every visit overlapping [since, until]; an open visit ends now."""
         now = now or time.time()
@@ -187,6 +226,25 @@ class HistoryStore:
         for ts, room, temp, hum in self.rows(since, until):
             writer.writerow([datetime.fromtimestamp(ts).isoformat(timespec="seconds"), room, temp, hum])
         return out.getvalue()
+
+
+BACKLOG_STEP_SEC = 30
+
+
+def _presence_runs(rows) -> list[tuple[float, float]]:
+    """(start, end) of each run of presence readings; a missing reading (gap over
+    two steps) ends the run. Each reading counts until the next one."""
+    runs, start, last = [], None, None
+    for ts, _t, _h, present in rows:
+        if start is not None and (not present or ts - last > 2 * BACKLOG_STEP_SEC):
+            runs.append((start, last + BACKLOG_STEP_SEC))
+            start = None
+        if present and start is None:
+            start = ts
+        last = ts
+    if start is not None:
+        runs.append((start, last + BACKLOG_STEP_SEC))
+    return runs
 
 
 def stuck_reading(store: HistoryStore, now: float | None = None, hours: float = STUCK_HOURS) -> str | None:

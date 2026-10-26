@@ -76,6 +76,33 @@ def parse_payload(raw: bytes | str) -> dict:
     return reading
 
 
+BACKLOG_MAX_AGE_SEC = 2 * 86400   # the board keeps 10 hours; anything older is nonsense
+
+
+def parse_backlog(raw: bytes | str, received: float) -> tuple[str, list[tuple[float, float, float, bool]]]:
+    """A backlog message from firmware 3.2+ (readings kept while the broker was
+    unreachable): {"room": ..., "readings": [[age_sec, temperature, humidity, presence], ...]}.
+    Returns (room, [(ts, temperature, humidity, presence)]) oldest first; rows
+    that are out of range are dropped one by one."""
+    try:
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or not isinstance(payload.get("readings"), list):
+            raise TypeError("not a backlog object")
+    except (ValueError, TypeError) as e:
+        raise InvalidPacket(f"unreadable backlog: {e}") from e
+    rows = []
+    for item in payload["readings"]:
+        try:
+            age, temperature, humidity = (_number(v) for v in item[:3])
+            presence = bool(item[3]) if len(item) > 3 else False
+        except (ValueError, TypeError, IndexError, OverflowError):
+            continue
+        if (0 <= age <= BACKLOG_MAX_AGE_SEC and TEMP_RANGE[0] <= temperature <= TEMP_RANGE[1]
+                and HUMIDITY_RANGE[0] <= humidity <= HUMIDITY_RANGE[1]):
+            rows.append((round(received - age, 1), round(temperature, 1), round(humidity, 1), presence))
+    return str(payload.get("room") or DEFAULT_ROOM), sorted(rows)
+
+
 def _number(value) -> float:
     """A finite number; bools and strings like "NaN" are rejected."""
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
@@ -113,12 +140,32 @@ class SharedMQTTClient:
         self._invalid_packets = 0
         self._history: deque[dict] = deque(maxlen=max_history)
         self._client: mqtt.Client | None = None
+        # called with (room, rows) for each backlog message; set by the app (history store)
+        self.on_backlog = None
 
     # --- public API ---------------------------------------------------
 
     @property
     def topic(self) -> str:
         return self._topic
+
+    @property
+    def backlog_topic(self) -> str:
+        return self._topic + "/backlog"
+
+    def ingest_backlog(self, raw: bytes | str, received: float | None = None) -> int:
+        """Hands a backlog message to on_backlog. The live reading is not touched:
+        these values are minutes or hours old. Returns how many rows were valid."""
+        try:
+            room, rows = parse_backlog(raw, received or time.time())
+        except InvalidPacket as e:
+            logger.warning("Ignoring MQTT backlog: %s", e)
+            with self._lock:
+                self._invalid_packets += 1
+            return 0
+        if rows and self.on_backlog:
+            self.on_backlog(room, rows)
+        return len(rows)
 
     @property
     def broker(self) -> str:
@@ -206,7 +253,7 @@ class SharedMQTTClient:
         with self._lock:
             self._broker_connected = ok
         if ok:
-            client.subscribe(self._topic)
+            client.subscribe([(self._topic, 0), (self.backlog_topic, 0)])
             logger.info("Connected to MQTT broker, subscribed to %s", self._topic)
         else:
             logger.warning("MQTT connect refused: %s", reason_code)
@@ -219,7 +266,10 @@ class SharedMQTTClient:
     def _on_message(self, client, userdata, msg):
         # Nothing a packet contains may stop paho's receive loop.
         try:
-            self.ingest(msg.payload)
+            if msg.topic == self.backlog_topic:
+                self.ingest_backlog(msg.payload)
+            else:
+                self.ingest(msg.payload)
         except Exception:
             logger.exception("Unexpected error while handling an MQTT packet")
             with self._lock:

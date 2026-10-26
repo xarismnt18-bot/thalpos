@@ -10,6 +10,9 @@
 // v3.1: the broker beacon must be signed (HMAC-SHA256 with DISCOVERY_KEY from
 // secrets.h) and come from the address it names; DISCOVERY_ENABLED 0 turns
 // discovery off completely.
+// v3.2: while the broker can't be reached (the PC asleep or switched off), a
+// reading every 30 s is kept in RAM (up to 10 hours) and sent as a backlog on
+// MQTT_TOPIC/backlog once the broker is back, so the history has no holes.
 //
 // Wiring (NodeMCU):  SHT31 + OLED: SDA -> D2, SCL -> D1, VCC -> 3V3, GND -> GND
 //                    radar: OT1/OUT -> D5, 3V3 -> 3V3, GND -> GND
@@ -35,7 +38,7 @@
 const bool HAS_RADAR = true;   // set false if no radar is wired (the pin would float)
 
 const char* ROOM_NAME = "Bedroom";
-const char* FIRMWARE_VERSION = "3.1";
+const char* FIRMWARE_VERSION = "3.2";
 const char* OTA_HOSTNAME = "thalpos-bedroom";   // reachable as thalpos-bedroom.local
 const unsigned long PUBLISH_INTERVAL_MS = 3000;   // the DHT11 fallback needs >= 1 s between reads
 const unsigned long MQTT_RETRY_MS = 3000;
@@ -73,6 +76,62 @@ unsigned long lastDisplay = 0;
 String clientId;
 unsigned long lastPublish = 0;
 unsigned long lastMqttAttempt = 0;
+
+// ---------- offline backlog ----------
+// Readings taken while the broker is unreachable, oldest first, in a ring.
+// 1200 x 12 bytes = 14 KB of the ~50 KB free RAM. A reboot loses it.
+const unsigned long BACKLOG_EVERY_MS = 30000;   // same pace as the backend's history
+const uint16_t BACKLOG_SIZE = 1200;             // 10 hours
+const uint8_t BACKLOG_CHUNK = 25;               // readings per MQTT message (~700 bytes)
+struct Buffered { uint32_t at; int16_t t10; uint16_t h10; bool presence; };
+Buffered backlog[BACKLOG_SIZE];
+uint16_t backlogStart = 0, backlogCount = 0;
+unsigned long lastBuffered = 0;
+String backlogTopic;
+
+void bufferReading() {
+  if (isnan(lastTemp) || isnan(lastHum)) return;
+  if (backlogCount == BACKLOG_SIZE) {   // full: the oldest reading makes room
+    backlogStart = (backlogStart + 1) % BACKLOG_SIZE;
+    backlogCount--;
+  }
+  Buffered& b = backlog[(backlogStart + backlogCount) % BACKLOG_SIZE];
+  b.at = millis();
+  b.t10 = (int16_t) lroundf(lastTemp * 10);
+  b.h10 = (uint16_t) lroundf(lastHum * 10);
+  b.presence = presence;
+  backlogCount++;
+}
+
+// Sends one chunk per call (the loop stays responsive); a reading leaves the
+// buffer only after the broker accepted it. Ages are in seconds, so the board
+// needs no clock: the backend subtracts them from the time it receives them.
+void flushBacklog() {
+  if (backlogCount == 0 || !client.connected()) return;
+  uint8_t n = backlogCount < BACKLOG_CHUNK ? backlogCount : BACKLOG_CHUNK;
+  unsigned long now = millis();
+  String payload = "{\"room\":\"";
+  payload += ROOM_NAME;
+  payload += "\",\"readings\":[";
+  for (uint8_t i = 0; i < n; i++) {
+    const Buffered& b = backlog[(backlogStart + i) % BACKLOG_SIZE];
+    if (i) payload += ",";
+    payload += "[";
+    payload += String((now - b.at) / 1000);
+    payload += ",";
+    payload += String(b.t10 / 10.0f, 1);
+    payload += ",";
+    payload += String(b.h10 / 10.0f, 1);
+    payload += ",";
+    payload += b.presence ? "1" : "0";
+    payload += "]";
+  }
+  payload += "]}";
+  if (!client.publish(backlogTopic.c_str(), payload.c_str())) return;   // try again next loop
+  backlogStart = (backlogStart + n) % BACKLOG_SIZE;
+  backlogCount -= n;
+  Serial.printf("Backlog: sent %u readings, %u left\n", n, backlogCount);
+}
 
 // Every network from secrets.h; WiFiMulti picks the strongest one in range.
 void addNetworks() {
@@ -376,6 +435,8 @@ void setup() {
   // Unique per board, so two nodes never kick each other off the broker.
   clientId = "ESP8266_THALPOS_" + String(ESP.getChipId(), HEX);
   client.setServer(MQTT_SERVER, MQTT_PORT);
+  client.setBufferSize(1024);   // a backlog chunk is ~700 bytes (the default is 256)
+  backlogTopic = String(MQTT_TOPIC) + "/backlog";
   if (DISCOVERY_ON) {
     discovery.begin(DISCOVERY_PORT);
     Serial.println("Broker discovery: signed beacons only");
@@ -404,6 +465,11 @@ void loop() {
     lastDisplay = millis();
     drawDisplay();
   }
+  // nobody to send to: keep a reading every 30 s for later
+  if (!client.connected() && millis() - lastBuffered >= BACKLOG_EVERY_MS) {
+    lastBuffered = millis();
+    bufferReading();
+  }
 
   if (WiFi.status() != WL_CONNECTED) return;
   listenForBroker();
@@ -414,4 +480,5 @@ void loop() {
     pendingPublish = false;
     publishReading();
   }
+  flushBacklog();
 }
