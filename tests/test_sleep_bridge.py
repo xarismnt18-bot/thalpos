@@ -13,6 +13,7 @@ def test_not_enabled_without_personal_pairing(tmp_path,monkeypatch):
 
 
 def test_paired_service_uses_same_interpreter_and_is_stopped(tmp_path,monkeypatch):
+    monkeypatch.setattr('backend.sleep_bridge.sys.platform','linux')
     monkeypatch.delenv('SLEEP_SYNC_TOKEN',raising=False)
     (tmp_path/'sleep_sync.env').write_text('SLEEP_SYNC_TOKEN='+'x'*43)
     monkeypatch.setattr('backend.sleep_bridge.socket.create_connection',Mock(side_effect=OSError))
@@ -42,10 +43,23 @@ def test_existing_listener_is_never_terminated(tmp_path,monkeypatch):
     spawn.assert_not_called()
 
 
-def test_stubborn_owned_child_is_killed_after_grace_period(tmp_path):
+def test_stubborn_owned_child_is_killed_after_grace_period(tmp_path,monkeypatch):
+    monkeypatch.setattr('backend.sleep_bridge.sys.platform','linux')
     bridge=SleepBridge(tmp_path)
     process=Mock();process.poll.return_value=None
     process.wait.side_effect=[subprocess.TimeoutExpired('uvicorn',5),0]
     bridge.process=process
     bridge.stop()
     process.kill.assert_called_once()
+
+
+def test_windows_venv_redirector_child_tree_is_stopped(tmp_path,monkeypatch):
+    monkeypatch.setattr('backend.sleep_bridge.sys.platform','win32')
+    command=Mock()
+    monkeypatch.setattr('backend.sleep_bridge.subprocess.run',command)
+    bridge=SleepBridge(tmp_path)
+    process=Mock();process.pid=12345;process.poll.return_value=None
+    bridge.process=process
+    bridge.stop()
+    assert command.call_args.args[0]==['taskkill','/PID','12345','/T','/F']
+    process.terminate.assert_not_called()

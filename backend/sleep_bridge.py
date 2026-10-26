@@ -48,7 +48,13 @@ class SleepBridge:
         if self.process is None:
             return
         if self.process.poll() is None:
-            self.process.terminate()
+            if sys.platform=='win32':
+                # Windows venv redirectors can own a second Python process.
+                # Stop our child tree, not only its launcher, to avoid orphans.
+                subprocess.run(['taskkill','/PID',str(self.process.pid),'/T','/F'],
+                               stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+            else:
+                self.process.terminate()
             try:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
