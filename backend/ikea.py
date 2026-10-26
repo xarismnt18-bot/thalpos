@@ -21,7 +21,7 @@ _TLS = ssl.create_default_context()
 _TLS.check_hostname = False
 _TLS.verify_mode = ssl.CERT_NONE
 
-LAMP_ALERT_KEYS = {"temp_high", "temp_low", "humidity_high", "humidity_low"}
+LAMP_ALERT_KEYS = {"temp_high", "temp_low", "humidity_high", "humidity_low", "mold_risk"}
 MIN_ON_SEC = 10 * 60  # a reading hovering at the limit must not make the lamp flicker
 
 

@@ -21,6 +21,8 @@ Run `setup_telegram.bat` and follow the prompts: create a bot with @BotFather, p
 
 **Time to air the room.** After someone has been in for 2 hours, if the humidity has climbed 3 points in the last hour (or is within 5 points of the limit), you get one reminder per stay: 🪟 *Someone has been in the Bedroom for 2 h 10 min and the humidity went from 52% to 58% in the last hour. Open the window for 5–10 minutes.*
 
+**Humidity over time, not single spikes.** A shower or a boiling pot can push the humidity over the limit for a few minutes; that is not worth a message. *Humid* is sent only once the humidity has stayed above the limit for 20 minutes (`HUMIDITY_HOLD_MIN`); a critical level (85%) is sent at once. Mold needs damp air that lasts, so after 3 hours above the limit without a break (`MOLD_EXPOSURE_HOURS`) a separate alert follows: 🍄 *Bedroom has been humid for 3.2 hours without a break (above 70%, now 76%). Mold grows when damp air lasts: air the room well or run a dehumidifier.* Dips of up to 2 points under the limit and short gaps in the data don't break the stretch. A sensor that looks stuck never raises it. `/status` also shows how many hours the room spent above the limit in the last 7 days.
+
 **Comfort alerts only while someone is in.** While the radar says the room is empty, too hot, too cold, too humid or too dry alerts wait: they are sent when someone comes in, if the problem is still there. Critical levels (mold-risk humidity, heat) and sensor problems always come through. The dashboard shows every alert either way.
 
 If the radar stops reporting (sensor offline) for a minute, presence becomes *unknown*: no message is sent, and the current visit is closed at the last reading, so offline time never counts as time in the room.

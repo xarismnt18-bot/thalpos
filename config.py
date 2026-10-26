@@ -118,6 +118,11 @@ POWER_WARNING = float(os.getenv("POWER_WARNING", "1200"))
 MOLD_HUMIDITY_MODERATE = 60
 MOLD_HUMIDITY_HIGH = 70
 MOLD_TEMP_MIN = 18
+# "Humid" is only reported once the humidity has stayed above HUMIDITY_HIGH for this
+# many minutes (a shower or a short spike doesn't count); HUMIDITY_CRITICAL is reported at once.
+HUMIDITY_HOLD_MIN = int(os.getenv("HUMIDITY_HOLD_MIN", "20"))
+# Mold needs moisture over time: a separate mold-risk alert after this many hours above HUMIDITY_HIGH
+MOLD_EXPOSURE_HOURS = float(os.getenv("MOLD_EXPOSURE_HOURS", "3"))
 
 
 # =========================

@@ -21,7 +21,7 @@ from ai.engines import dew_point, health_score, mold_risk
 from backend.alerts import active_alerts
 from backend.daily_stats import DailyStats, format_day, yesterday
 from backend import charts
-from backend.history_store import format_night
+from backend.history_store import format_night, humid_hours
 from backend.voice import status_sentence
 
 logger = logging.getLogger(__name__)
@@ -309,7 +309,12 @@ class TelegramBot:
         alerts = [a.message for a in active_alerts(latest, t)]
         if self._notifier.stuck:
             alerts.append(f"Sensor may be stuck ({self._notifier.stuck} for hours).")
+        if self._notifier.mold_message:
+            alerts.append(self._notifier.mold_message)
         lines.append("⚠️ " + "\n⚠️ ".join(alerts) if alerts else "✅ No alerts.")
+        if self._history is not None:
+            week = humid_hours(self._history, t.HUMIDITY_HIGH, time.time() - 7 * 86400)
+            lines.append(f"💧 Above {t.HUMIDITY_HIGH:g}% for {week:.1f} h in the last 7 days.")
         lamp = self._notifier.lamp
         if lamp and lamp.lit_by_alert:
             lines.append("💡 Alert lamp is on.")

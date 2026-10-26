@@ -4,7 +4,7 @@ import { getAlertHistory } from "../config";
 const RANGES = [[1, "24 hours"], [7, "7 days"], [30, "30 days"]];
 const LABELS = {
   temp_high: "Too warm", temp_low: "Too cold", humidity_high: "Humid", humidity_low: "Dry air",
-  sensor_offline: "Sensor offline", broker_offline: "Broker offline", sensor_stuck: "Sensor stuck",
+  sensor_offline: "Sensor offline", broker_offline: "Broker offline", sensor_stuck: "Sensor stuck", mold_risk: "Mold risk",
 };
 
 function duration(sec) {

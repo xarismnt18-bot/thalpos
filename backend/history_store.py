@@ -195,6 +195,37 @@ def stuck_reading(store: HistoryStore, now: float | None = None, hours: float = 
     return None
 
 
+HUMID_DIP = 2.0         # a dip less than this many % under the limit doesn't end a humid stretch
+HUMID_MAX_GAP_SEC = 600  # nor does a gap in the data shorter than this (a sensor hiccup)
+
+
+def humid_for(store: HistoryStore, limit: float, now: float | None = None, lookback_hours: float = 48) -> float:
+    """Seconds the room has been humid without a break: every stored reading back to
+    then is above `limit` (small dips of up to HUMID_DIP % and short gaps don't count
+    as a break). 0 when the newest reading isn't humid or there is no recent data."""
+    now = now or time.time()
+    rows = store.rows(now - lookback_hours * 3600, now)
+    if not rows or now - rows[-1][0] > HUMID_MAX_GAP_SEC or rows[-1][3] <= limit:
+        return 0.0
+    start = rows[-1][0]
+    for ts, _room, _temp, hum in reversed(rows):
+        if start - ts > HUMID_MAX_GAP_SEC or hum <= limit - HUMID_DIP:
+            break
+        start = ts
+    return now - start
+
+
+def humid_hours(store: HistoryStore, limit: float, since: float, until: float | None = None) -> float:
+    """Hours above `limit` between since and until (each reading counts for the time
+    to the next one, at most HUMID_MAX_GAP_SEC, so gaps in the data add nothing)."""
+    rows = store.rows(since, until)
+    seconds = 0.0
+    for (ts, _r, _t, hum), nxt in zip(rows, rows[1:] + [None]):
+        if hum > limit:
+            seconds += min((nxt[0] - ts) if nxt else SAMPLE_SEC, HUMID_MAX_GAP_SEC)
+    return seconds / 3600
+
+
 def format_night(store: HistoryStore, thresholds, now: datetime | None = None, hours: int = 10) -> str:
     """Hour-by-hour summary for Telegram /night (default: the last 10 hours)."""
     now = now or datetime.now()

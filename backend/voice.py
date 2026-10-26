@@ -51,6 +51,7 @@ def spoken(key: str, latest: dict, thresholds) -> str:
         "humidity_high": f"{room} humidity is {h}, above {thresholds.HUMIDITY_HIGH:g}. "
                          "Consider running the dehumidifier.",
         "humidity_low": f"The air in the {room} is dry, {h} humidity.",
+        "mold_risk": f"The {room} has been humid for hours. Mold risk. Please air the room or run the dehumidifier.",
     }.get(key, f"Smart home alert for the {room}.")
 
 

@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 
 from backend.alerts import active_alerts
-from backend.history_store import stuck_reading
+from backend.history_store import humid_for, stuck_reading
 from backend.voice import spoken
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,8 @@ class TelegramClient:
         return result
 
 
-def describe(key: str, latest: dict, thresholds, resolved: bool, stuck: str | None = None) -> str:
+def describe(key: str, latest: dict, thresholds, resolved: bool, stuck: str | None = None,
+             humid_sec: float = 0.0) -> str:
     room = latest.get("room") or "Room"
     temp, hum = latest.get("temperature"), latest.get("humidity")
     t, h = (f"{temp:.1f}°C" if temp is not None else "--"), (f"{hum:.0f}%" if hum is not None else "--")
@@ -104,6 +105,7 @@ def describe(key: str, latest: dict, thresholds, resolved: bool, stuck: str | No
             "humidity_high": f"✅ {room}: humidity back to normal ({h}).",
             "humidity_low": f"✅ {room}: humidity back to normal ({h}).",
             "sensor_stuck": f"✅ {room} sensor readings are changing again.",
+            "mold_risk": f"✅ {room}: the long humid stretch is over ({h}).",
         }.get(key, f"✅ {room}: alert cleared.")
 
     age = latest.get("seconds_since_update")
@@ -116,6 +118,9 @@ def describe(key: str, latest: dict, thresholds, resolved: bool, stuck: str | No
         "humidity_high": f"💧 {room} humidity is high: {h} (limit {thresholds.HUMIDITY_HIGH:g}%). "
                          "Mold risk rises; open a window or run the dehumidifier.",
         "humidity_low": f"🏜️ {room} air is dry: {h} (limit {thresholds.HUMIDITY_LOW:g}%).",
+        "mold_risk": f"🍄 {room} has been humid for {humid_sec / 3600:.1f} hours without a break "
+                     f"(above {thresholds.HUMIDITY_HIGH:g}%, now {h}). Mold grows when damp air lasts: "
+                     "air the room well or run a dehumidifier.",
         "sensor_stuck": f"🧐 {room} {stuck or 'sensor'} has not changed for hours. The sensor may be stuck "
                         "(a DHT11 often sticks near 95% when damp): check it is dry and away from cold walls.",
     }.get(key, f"⚠️ {room}: {key}")
@@ -123,7 +128,7 @@ def describe(key: str, latest: dict, thresholds, resolved: bool, stuck: str | No
 
 class AlertNotifier:
     def __init__(self, telegram: TelegramClient, sensor, settings, check_sec: int, cooldown_min: int, voice=None, lamp=None,
-                 history=None, state_path: str | None = None):
+                 history=None, state_path: str | None = None, humidity_hold_min: float = 20, mold_hours: float = 3):
         self.telegram = telegram
         self.voice = voice
         self.lamp = lamp
@@ -139,6 +144,9 @@ class AlertNotifier:
         self._muted_until = 0.0  # wall-clock time; alerts are not sent before it
         self.history = history   # HistoryStore, for the stuck-sensor check
         self.stuck: str | None = None  # e.g. "humidity at 95%" while the sensor looks stuck
+        self.humid_sec = 0.0  # how long the room has been above HUMIDITY_HIGH without a break (from the history)
+        self._humidity_hold_sec = humidity_hold_min * 60
+        self._mold_sec = mold_hours * 3600
         self.presence = None  # PresenceWatcher, set by the app: comfort alerts wait while the room is empty
         self._stuck_checked_at = -1e9
         self._state_path = state_path
@@ -186,9 +194,11 @@ class AlertNotifier:
         if self.history is not None:
             if time.monotonic() - self._stuck_checked_at >= 60:
                 self.stuck = stuck_reading(self.history)
+                self.humid_sec = humid_for(self.history, thresholds.HUMIDITY_HIGH)
                 self._stuck_checked_at = time.monotonic()
             if self.stuck:
                 current.add("sensor_stuck")
+            current = self._humidity_over_time(current, latest, thresholds)
         if not latest.get("sensor_online"):
             # values are stale while the sensor is offline: keep value alerts as
             # they were and only track connectivity
@@ -213,6 +223,26 @@ class AlertNotifier:
         if self.lamp:
             self.lamp.sync(self._reported)
 
+    def _humidity_over_time(self, current: set[str], latest: dict, thresholds) -> set[str]:
+        """A short spike (a shower, a pot boiling) is not worth a message: "humid"
+        starts only after HUMIDITY_HOLD_MIN minutes above the limit, unless it is
+        critical. Hours of it without a break raise the separate mold-risk alert."""
+        hum = latest.get("humidity")
+        if ("humidity_high" in current and "humidity_high" not in self._reported
+                and (hum is None or hum < thresholds.HUMIDITY_CRITICAL)
+                and self.humid_sec < self._humidity_hold_sec):
+            current = current - {"humidity_high"}
+        if self.humid_sec >= self._mold_sec and not self.stuck:
+            current = current | {"mold_risk"}
+        return current
+
+    @property
+    def mold_message(self) -> str | None:
+        """For the dashboard and /status while the mold-risk stretch lasts."""
+        if self.humid_sec < self._mold_sec or self.stuck:
+            return None
+        return f"Humid for {self.humid_sec / 3600:.1f} hours without a break: mold risk. Air the room or run a dehumidifier."
+
     def _hold_while_empty(self, current: set[str], latest: dict, thresholds) -> set[str]:
         """While the radar says the room is empty, comfort alerts neither start
         nor clear: you hear about a hot or humid room when someone is in it.
@@ -231,11 +261,12 @@ class AlertNotifier:
 
     def _raise(self, key: str, latest: dict, thresholds) -> None:
         self._reported.add(key)
-        self._log("alert_started", key, describe(key, latest, thresholds, resolved=False, stuck=self.stuck))
+        self._log("alert_started", key, describe(key, latest, thresholds, resolved=False, stuck=self.stuck,
+                                                humid_sec=self.humid_sec))
         now = time.time()
         if now - self._last_sent.get(key, -self._cooldown_sec) < self._cooldown_sec:
             return
-        if self._send(describe(key, latest, thresholds, resolved=False, stuck=self.stuck)):
+        if self._send(describe(key, latest, thresholds, resolved=False, stuck=self.stuck, humid_sec=self.humid_sec)):
             self._last_sent[key] = now
             self._notified.add(key)
             self._save_state()

@@ -17,7 +17,7 @@ from config import (  # noqa: E402
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTIFY_CHECK_SEC, NOTIFY_COOLDOWN_MIN,
     DAILY_SUMMARY_TIME, STATS_FILE, HISTORY_DB, ALERT_STATE_FILE, PREFERENCES_FILE,
     VOICEMONKEY_TOKEN, VOICEMONKEY_DEVICE, VOICE_QUIET_HOURS, VOICE_STATUS_VAR, VOICE_STATUS_SEC, VOICE_STATUS_ENABLED,
-    IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID, LAMP_QUIET_HOURS,
+    IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID, LAMP_QUIET_HOURS, HUMIDITY_HOLD_MIN, MOLD_EXPOSURE_HOURS,
 )
 from ai.mqtt_client import SharedMQTTClient  # noqa: E402
 from ai.engines import (  # noqa: E402
@@ -48,7 +48,8 @@ voice = VoiceAnnouncer(VOICEMONKEY_TOKEN, VOICEMONKEY_DEVICE, VOICE_QUIET_HOURS)
 lamp = AlertLamp(IkeaOutlet(IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID), LAMP_QUIET_HOURS)
 history_store = HistoryStore(HISTORY_DB)
 notifier = AlertNotifier(telegram, sensor, settings, NOTIFY_CHECK_SEC, NOTIFY_COOLDOWN_MIN, voice=voice, lamp=lamp,
-                         history=history_store, state_path=ALERT_STATE_FILE)
+                         history=history_store, state_path=ALERT_STATE_FILE,
+                         humidity_hold_min=HUMIDITY_HOLD_MIN, mold_hours=MOLD_EXPOSURE_HOURS)
 presence = PresenceWatcher(telegram, sensor, notifier, history=history_store, settings=settings)
 notifier.presence = presence
 preferences = Preferences(PREFERENCES_FILE, voice, lamp, presence)
@@ -174,6 +175,8 @@ def get_alerts():
     alerts = [a.message for a in active_alerts(sensor.latest, settings.thresholds)]
     if notifier.stuck:
         alerts.append(f"Sensor may be stuck: {notifier.stuck} for hours.")
+    if notifier.mold_message:
+        alerts.append(notifier.mold_message)
     return {"alerts": alerts or ["No active alerts."]}
 
 
