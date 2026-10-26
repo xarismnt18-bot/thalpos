@@ -4,6 +4,24 @@
 
 ## Parts
 
+### OLED quiet hours
+
+Firmware 3.3 turns only the OLED off from **23:00 to 08:00 Europe/Athens**.
+Temperature/humidity sampling, radar, Wi-Fi, MQTT and offline buffering remain
+active. The screen wakes automatically at 08:00. NTP synchronises the clock;
+the core's Athens timezone includes daylight-saving changes. If the board
+reboots before it can obtain time, the display stays dark until time is known.
+After a successful time sync it can keep the schedule during a Wi-Fi outage.
+
+Optional settings in local `secrets.h`: `OLED_NIGHT_MODE` (0 disables quiet
+hours), `OLED_NIGHT_START_HOUR` and `OLED_NIGHT_END_HOUR` (0–23), and
+`OLED_TIMEZONE` (default `TZ_Europe_Athens`). Equal start/end disables the
+quiet interval. Changes require a firmware upload. The telemetry fields
+`oled_on` and `oled_clock_ready` appear under `/latest` → `device`.
+
+This schedule is independent of smartwatch sleep detection; it does not put
+the ESP8266 into deep sleep or interrupt room readings.
+
 | Part | Notes |
 |------|-------|
 | NodeMCU ESP8266 (CP2102 or CH340) | Board "NodeMCU 1.0 (ESP-12E Module)" |
@@ -40,7 +58,7 @@ On a breadboard, every pin of a part goes in its own row: the five holes of a ro
 
 ## What the firmware does
 
-`firmware/esp8266_dht11/esp8266_dht11.ino`, version 3.2:
+`firmware/esp8266_dht11/esp8266_dht11.ino`, version 3.3:
 
 - At boot it lists the I2C devices it finds, then uses an SHT31 if there is one, otherwise the DHT11 on `D4`. An OLED is used if found.
 - Every 3 seconds it reads the sensor and publishes a JSON message on `smartroom/dht11`:

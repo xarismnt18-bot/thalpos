@@ -29,3 +29,12 @@
 // DISCOVERY_ENABLED 0, the board always uses MQTT_SERVER above.
 // #define DISCOVERY_KEY "64 hex characters"
 // #define DISCOVERY_ENABLED 0
+
+// Optional OLED-only quiet hours. Defaults: 23:00-08:00, Europe/Athens.
+// The board uses NTP with automatic daylight-saving changes. No sleep mode:
+// temperature, humidity, radar and MQTT stay active. Until time is known,
+// the OLED stays dark. Set OLED_NIGHT_MODE 0 to keep the OLED always on.
+// #define OLED_NIGHT_MODE 1
+// #define OLED_NIGHT_START_HOUR 23
+// #define OLED_NIGHT_END_HOUR 8
+// #define OLED_TIMEZONE TZ_Europe_Athens

@@ -13,6 +13,8 @@
 // v3.2: while the broker can't be reached (the PC asleep or switched off), a
 // reading every 30 s is kept in RAM (up to 10 hours) and sent as a backlog on
 // MQTT_TOPIC/backlog once the broker is back, so the history has no holes.
+// v3.3: OLED-only quiet hours, 23:00-08:00 Europe/Athens by default.
+// Measurements, radar, MQTT and backlog keep running while the display is off.
 //
 // Wiring (NodeMCU):  SHT31 + OLED: SDA -> D2, SCL -> D1, VCC -> 3V3, GND -> GND
 //                    radar: OT1/OUT -> D5, 3V3 -> 3V3, GND -> GND
@@ -26,7 +28,25 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <bearssl/bearssl_hmac.h>
+#include <time.h>
+#include <TZ.h>
 #include "secrets.h"
+#include "oled_policy.h"
+
+#ifndef OLED_NIGHT_MODE
+#define OLED_NIGHT_MODE 1
+#endif
+#ifndef OLED_NIGHT_START_HOUR
+#define OLED_NIGHT_START_HOUR 23
+#endif
+#ifndef OLED_NIGHT_END_HOUR
+#define OLED_NIGHT_END_HOUR 8
+#endif
+#ifndef OLED_TIMEZONE
+#define OLED_TIMEZONE TZ_Europe_Athens
+#endif
+static_assert(OLED_NIGHT_START_HOUR >= 0 && OLED_NIGHT_START_HOUR < 24, "Invalid OLED start hour");
+static_assert(OLED_NIGHT_END_HOUR >= 0 && OLED_NIGHT_END_HOUR < 24, "Invalid OLED end hour");
 
 #ifndef DISCOVERY_ENABLED
 #define DISCOVERY_ENABLED 1   // set 0 in secrets.h to always use MQTT_SERVER
@@ -38,7 +58,7 @@
 const bool HAS_RADAR = true;   // set false if no radar is wired (the pin would float)
 
 const char* ROOM_NAME = "Bedroom";
-const char* FIRMWARE_VERSION = "3.2";
+const char* FIRMWARE_VERSION = "3.3";
 const char* OTA_HOSTNAME = "thalpos-bedroom";   // reachable as thalpos-bedroom.local
 const unsigned long PUBLISH_INTERVAL_MS = 3000;   // the DHT11 fallback needs >= 1 s between reads
 const unsigned long MQTT_RETRY_MS = 3000;
@@ -68,6 +88,7 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
 uint8_t shtAddress = 0;      // 0x44 or 0x45 when an SHT31 answers, 0 = use the DHT11
 bool hasDisplay = false;
+bool displayOn = false;
 float lastTemp = NAN, lastHum = NAN;
 bool presence = false;
 bool pendingPublish = false;
@@ -321,8 +342,30 @@ bool readClimate(float& temperature, float& humidity) {
 const char* sensorName() { return shtAddress ? "SHT31" : "DHT11"; }
 
 // ---------- OLED ----------
+bool oledClockReady() {
+  return time(nullptr) >= 1704067200;  // do not treat the unsynchronised boot clock as local time
+}
+
+bool oledWantsOn() {
+  if (!OLED_NIGHT_MODE || OLED_NIGHT_START_HOUR == OLED_NIGHT_END_HOUR) return true;
+  // Fail dark until the first NTP sync; sensor acquisition must never wait for time.
+  if (!oledClockReady()) return false;
+  time_t now = time(nullptr);
+  struct tm local;
+  if (!localtime_r(&now, &local)) return false;
+  return !oledQuietHour(local.tm_hour, OLED_NIGHT_START_HOUR, OLED_NIGHT_END_HOUR);
+}
+
 void drawDisplay() {
   if (!hasDisplay) return;
+  if (!oledWantsOn()) {
+    if (displayOn) {
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+      displayOn = false;
+      Serial.println("OLED off (quiet hours; measurements continue)");
+    }
+    return;
+  }
   display.clearDisplay();
   // move the whole picture by a pixel every few minutes so the OLED doesn't burn in
   int dx = (millis() / 180000) % 3, dy = (millis() / 540000) % 2;
@@ -357,6 +400,11 @@ void drawDisplay() {
   else if (!client.connected()) display.print("Wi-Fi ok, no broker");
   else { display.print(WiFi.SSID().substring(0, 14)); display.print(" ok"); }
   display.display();
+  if (!displayOn) {
+    display.ssd1306_command(SSD1306_DISPLAYON);
+    displayOn = true;
+    Serial.println("OLED on (daytime)");
+  }
 }
 
 // Reads the sensor even while offline, so the OLED keeps showing live values.
@@ -396,7 +444,11 @@ void publishReading() {
   payload += String(WiFi.RSSI());
   payload += ",\"fw\":\"";
   payload += FIRMWARE_VERSION;
-  payload += "\"}";
+  payload += "\",\"oled_on\":";
+  payload += (hasDisplay && displayOn) ? "true" : "false";
+  payload += ",\"oled_clock_ready\":";
+  payload += oledClockReady() ? "true" : "false";
+  payload += "}";
 
   bool ok = client.publish(MQTT_TOPIC, payload.c_str());
   Serial.print(ok ? "Sent: " : "Publish FAILED: ");
@@ -418,6 +470,7 @@ void setup() {
 
   hasDisplay = display.begin(SSD1306_SWITCHCAPVCC, 0x3C) || display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
   if (hasDisplay) {
+    display.ssd1306_command(SSD1306_DISPLAYOFF);
     display.ssd1306_command(SSD1306_SETCONTRAST);
     display.ssd1306_command(40);   // dimmer: easier on the eyes at night, slower burn-in
     drawDisplay();
@@ -430,6 +483,8 @@ void setup() {
   WiFi.hostname(OTA_HOSTNAME);
   addNetworks();
   connectToWiFi();
+  // Non-blocking NTP; the core applies Athens daylight-saving rules from TZ.h.
+  configTime(OLED_TIMEZONE, "pool.ntp.org", "time.cloudflare.com");
   setupOta();
 
   // Unique per board, so two nodes never kick each other off the broker.

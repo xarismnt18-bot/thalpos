@@ -27,6 +27,19 @@ def test_latest_reports_presence_and_sensor():
     assert latest["presence"] is False and latest["sensor"] == "SHT31" and latest["device"] == {"fw": "3.0"}
 
 
+def test_oled_night_status_does_not_affect_measurements():
+    c = SharedMQTTClient(stale_after_sec=60)
+    c.ingest('{"temperature":20,"humidity":50,"fw":"3.3","oled_on":false,"oled_clock_ready":true}')
+    assert c.latest['temperature']==20 and c.latest['humidity']==50
+    assert c.latest['device']['oled_on'] is False
+    assert c.latest['device']['oled_clock_ready'] is True
+
+
+def test_invalid_optional_oled_status_is_not_treated_as_true():
+    packet=parse_payload('{"temperature":20,"humidity":50,"oled_on":"false","oled_clock_ready":1}')
+    assert 'oled_on' not in packet and 'oled_clock_ready' not in packet
+
+
 def test_invalid_still_rejected():
     with pytest.raises(InvalidPacket):
         parse_payload('{"temperature":200,"humidity":50}')

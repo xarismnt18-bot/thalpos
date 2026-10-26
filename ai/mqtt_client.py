@@ -65,6 +65,9 @@ def parse_payload(raw: bytes | str) -> dict:
     }
     if isinstance(payload.get("presence"), bool):
         reading["presence"] = payload["presence"]
+    for key in ("oled_on", "oled_clock_ready"):
+        if isinstance(payload.get(key), bool):
+            reading[key] = payload[key]
     for key in ("sensor", "fw", "wifi", "ip"):
         if isinstance(payload.get(key), str) and payload[key]:
             reading[key] = payload[key][:40]
@@ -195,7 +198,7 @@ class SharedMQTTClient:
             # None when the board has no radar (or runs older firmware)
             "presence": reading.get("presence") if reading and sensor_online else None,
             "sensor": reading.get("sensor", "DHT11") if reading else None,
-            "device": {k: reading[k] for k in ("fw", "wifi", "rssi", "ip") if k in reading} if reading else {},
+            "device": {k: reading[k] for k in ("fw", "wifi", "rssi", "ip", "oled_on", "oled_clock_ready") if k in reading} if reading else {},
         }
 
     def history(self, limit: int | None = None) -> list[dict]:
