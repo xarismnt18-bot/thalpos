@@ -13,6 +13,7 @@ import sys
 import uvicorn
 
 from config import API_HOST, API_PORT, API_RELOAD
+from backend.sleep_bridge import SleepBridge
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,9 +22,14 @@ logging.basicConfig(
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "backend.api:app",
-        host=API_HOST,
-        port=API_PORT,
-        reload=API_RELOAD or "--reload" in sys.argv,
-    )
+    sleep_bridge=SleepBridge()
+    sleep_bridge.start()
+    try:
+        uvicorn.run(
+            "backend.api:app",
+            host=API_HOST,
+            port=API_PORT,
+            reload=API_RELOAD or "--reload" in sys.argv,
+        )
+    finally:
+        sleep_bridge.stop()

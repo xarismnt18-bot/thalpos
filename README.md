@@ -4,6 +4,8 @@
 
 Thalpos is a smart room monitor. An ESP8266 measures the temperature and humidity of a room, a mmWave radar notices when someone is there, and a FastAPI backend turns the readings into alerts, forecasts and advice. You follow it all on a 3D dashboard of your home and on Telegram.
 
+**Optional wearable sleep integration:** import sleep stages from Android Health Connect, align room readings only with recorded sleep intervals, and review a transparent experimental sleep/environment index. Includes a private, authenticated local bridge, Android companion with opt-in background sync, and a responsive Sleep dashboard. Once paired, the bridge starts and stops with normal Thalpos. [Setup and privacy](docs/sleep-wearable.md).
+
 **[▶ Live demo](https://xarismnt18-bot.github.io/thalpos/)**: the real dashboard with a simulated sensor, running in your browser. Nothing to install.
 
 **[▶ Run the code in your browser](https://codespaces.new/xarismnt18-bot/thalpos?quickstart=1)**: opens the project in GitHub Codespaces and starts the whole stack (MQTT broker, a simulated board, the FastAPI backend and the dashboard). The dashboard opens by itself after about two minutes. Needs only a GitHub account.

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import process from 'node:process'
 
 // VITE_BASE is set by the GitHub Pages build (served from /<repo>/).
 // The dev server forwards /api to the backend, so the dashboard and the API
@@ -17,6 +18,10 @@ export default defineConfig({
     // .ts.net: Tailscale on the phone; .app.github.dev: the Codespaces demo
     allowedHosts: ['.ts.net', '.app.github.dev'],
     proxy: {
+      '/wearable': {
+        target: 'http://127.0.0.1:8001',
+        rewrite: (path) => path.replace(/^\/wearable/, ''),
+      },
       '/api': {
         target: 'http://127.0.0.1:8000',
         rewrite: (path) => path.replace(/^\/api/, ''),

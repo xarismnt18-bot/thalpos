@@ -1,4 +1,12 @@
 venv/
+.venv-sleep/
+sleep_sync.env
+data/wearable_sleep.db*
+data/voice_status.json
+android-sleep/.gradle/
+android-sleep/.kotlin/
+android-sleep/**/build/
+android-sleep/local.properties
 __pycache__/
 .pytest_cache/
 *.pyc

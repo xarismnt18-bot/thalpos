@@ -21,7 +21,10 @@ function formatReading(value) {
 }
 
 export default function App() {
-  const [active, setActive] = useState("DASHBOARD");
+  const [active, setActive] = useState(() => (
+    import.meta.env.BASE_URL === '/sleep-lab/' || new URLSearchParams(window.location.search).get('page') === 'SLEEP'
+      ? 'SLEEP' : 'DASHBOARD'
+  ));
   const [navOpen, setNavOpen] = useState(false);
   const { toasts, push, dismiss } = useToasts();
   const telemetry = useTelemetry({ onEvent: push });
