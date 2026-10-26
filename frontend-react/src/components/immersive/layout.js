@@ -28,13 +28,17 @@ export const WALLS = [
 ];
 
 // [w, h, d, x, z, y0]
+// No face may sit on the same plane as another surface (a wall, the floor, the
+// live room's heat volume, which is inset HEAT_INSET from the room): two faces
+// at the same depth z-fight and flicker. Keep at least ~5 cm between them.
+export const HEAT_INSET = 0.1;
 export const FURNITURE = [
-  [2.0, 0.45, 2.6, -4.6, -2.6, 0], [2.0, 0.25, 0.5, -4.6, -3.75, 0.45], // bed + pillow
-  [0.6, 0.5, 0.6, -3.2, -3.6, 0], // nightstand
+  [2.0, 0.45, 2.6, -4.6, -2.55, 0], [2.0, 0.25, 0.5, -4.6, -3.6, 0.45], // bed + pillow
+  [0.6, 0.5, 0.6, -3.2, -3.55, 0], // nightstand
   [1.2, 0.75, 0.6, -2, -0.5, 0], // desk
   [3, 0.5, 0.9, -3.2, 3.3, 0], [3, 0.35, 0.25, -3.2, 3.7, 0.5], // sofa
   [1.4, 0.4, 0.8, -3.2, 1.8, 0], // coffee table
-  [4.2, 0.9, 0.6, 3.8, -3.65, 0], [0.6, 0.9, 2.2, 5.65, -2.4, 0], // kitchen L
+  [4.2, 0.9, 0.6, 3.8, -3.6, 0], [0.6, 0.9, 2.2, 5.6, -2.4, 0], // kitchen L
   [1.4, 0.75, 0.8, 4, 2, 0], [1.6, 0.08, 0.08, 4, 3.85, 1.2], // office desk + shelf
   [1.6, 0.5, 0.8, 0.2, -3.5, 0], // bath tub
 ];

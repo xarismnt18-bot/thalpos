@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Edges, Html, Line } from "@react-three/drei";
 import * as THREE from "three";
 import {
-  AI_POS, BROKER_POS, DATA_LEGS, FURNITURE, LIVE_ROOM, ROOMS, SENSOR_POS, WALLS, WALL_HEIGHT,
+  AI_POS, BROKER_POS, DATA_LEGS, FURNITURE, HEAT_INSET, LIVE_ROOM, ROOMS, SENSOR_POS, WALLS, WALL_HEIGHT,
 } from "./layout";
 
 const NO_DATA = new THREE.Color("#2A3440");
@@ -152,8 +152,9 @@ export function LiveRoomEffects({ color, view, alert, reduced }) {
 
   return (
     <group>
-      <mesh position={[c.x, 0.75, c.z]} raycast={() => null}>
-        <boxGeometry args={[LIVE_ROOM.width - 0.2, 1.4, LIVE_ROOM.depth - 0.2]} />
+      {/* bottom at 0.1 m: clear of the floor slab's top (0.06 m) so the two don't z-fight */}
+      <mesh position={[c.x, 0.8, c.z]} raycast={() => null}>
+        <boxGeometry args={[LIVE_ROOM.width - 2 * HEAT_INSET, 1.4, LIVE_ROOM.depth - 2 * HEAT_INSET]} />
         <shaderMaterial ref={heat} transparent depthWrite={false} blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
           uniforms={uniforms} vertexShader={heatVertex} fragmentShader={heatFragment} />
       </mesh>
