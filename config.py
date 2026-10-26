@@ -83,12 +83,12 @@ VOICEMONKEY_DEVICE = os.getenv("VOICEMONKEY_DEVICE") or None
 VOICE_QUIET_HOURS = os.getenv("VOICE_QUIET_HOURS", "23:00-08:00")
 # "Alexa, bedroom status": the sentence is kept in this Voice Monkey variable
 VOICE_STATUS_VAR = os.getenv("VOICE_STATUS_VAR", "THALPOS_STATUS")
-# Off by default: each update is a Voice Monkey request and the free plan allows
-# only 200 a month. Turn on (VOICE_STATUS_ENABLED=1) on a paid plan.
-VOICE_STATUS_ENABLED = os.getenv("VOICE_STATUS_ENABLED", "0") == "1"
-VOICE_STATUS_SEC = int(os.getenv("VOICE_STATUS_SEC", "60"))
-# Off (the default): a free-plan mode answers "bedroom status" with a timed snapshot,
-# updated only when something changes and at most 3 times a day.
+# "Alexa, bedroom status": the sentence is kept in a Voice Monkey variable. Updating a
+# variable does not count towards the plan's monthly quota (only what Alexa speaks does),
+# so it is refreshed whenever it changes, at most every VOICE_STATUS_SEC seconds.
+# VOICE_STATUS_ENABLED=0 falls back to a timed snapshot updated at most 3 times a day.
+VOICE_STATUS_ENABLED = os.getenv("VOICE_STATUS_ENABLED", "1") == "1"
+VOICE_STATUS_SEC = int(os.getenv("VOICE_STATUS_SEC", "300"))
 # Yesterday's summary is sent once a day, at or after this local time (HH:MM).
 # IKEA smart plug used as an alert lamp (optional; off until setup_ikea.bat ran)
 IKEA_HUB_IP = os.getenv("IKEA_HUB_IP") or None

@@ -278,7 +278,8 @@ def get_voice_status():
     """The sentence Alexa reads for "Alexa, bedroom status", and whether it reached Voice Monkey."""
     return {
         "enabled": voice.enabled,
-        "mode": "live" if VOICE_STATUS_ENABLED else "free plan: timed snapshot, at most 3 updates a day",
+        "mode": f"live, at most every {VOICE_STATUS_SEC} s" if VOICE_STATUS_ENABLED
+                else "timed snapshot, at most 3 updates a day",
         "variable": voice_status.variable,
         "text": voice_status.text,
         "last_error": voice_status.last_error,

@@ -206,9 +206,12 @@ class VoiceStatusPublisher:
 
     Pushes when the sentence changes (checked every interval_sec) and at least
     every REFRESH_SEC anyway; on shutdown it leaves a "server is off" sentence.
+    Variable updates don't use the Voice Monkey quota, but if it ever answers
+    THROTTLED the publisher backs off for THROTTLE_PAUSE_SEC.
     """
 
-    REFRESH_SEC = 15 * 60
+    REFRESH_SEC = 30 * 60
+    THROTTLE_PAUSE_SEC = 3600
 
     def __init__(self, voice: VoiceAnnouncer, sensor, settings, variable: str, interval_sec: int):
         self._voice = voice
@@ -218,6 +221,7 @@ class VoiceStatusPublisher:
         self._interval = interval_sec
         self._last_text: str | None = None
         self._last_push = 0.0
+        self._paused_until = 0.0
         self.last_error: str | None = None
         self._stop = threading.Event()
         self._started = False
@@ -228,7 +232,8 @@ class VoiceStatusPublisher:
         self._stop.clear()
         self._started = True
         threading.Thread(target=self._run, name="voice-status", daemon=True).start()
-        logger.info("Alexa status: kept in Voice Monkey variable %s", self.variable)
+        logger.info("Alexa status: kept in Voice Monkey variable %s, updated at most every %d s",
+                    self.variable, self._interval)
 
     def leave_paused_note(self) -> None:
         """Status updates are off: say so once instead of leaving stale numbers."""
@@ -255,6 +260,8 @@ class VoiceStatusPublisher:
             self._stop.wait(self._interval)
 
     def publish(self, force: bool = False) -> bool:
+        if time.monotonic() < self._paused_until:
+            return False
         text = self.text
         due = time.monotonic() - self._last_push >= self.REFRESH_SEC
         if not force and text == self._last_text and not due:
@@ -268,6 +275,8 @@ class VoiceStatusPublisher:
             if e.args[0] != self.last_error:
                 logger.warning("Alexa status: %s", e)
             self.last_error = e.args[0]
+            if "THROTTLED" in e.args[0]:
+                self._paused_until = time.monotonic() + self.THROTTLE_PAUSE_SEC
             return False
         self._last_text, self._last_push, self.last_error = text, time.monotonic(), None
         return True

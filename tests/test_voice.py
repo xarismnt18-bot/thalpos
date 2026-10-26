@@ -140,3 +140,18 @@ def test_economy_counts_survive_a_restart_and_shutdown_is_free(thresholds, tmp_p
     assert not p2.publish(now=t.replace(minute=30))           # same state, remembered
     assert p2.text.startswith("At 9 AM")
     assert calls2 == [] and len(calls) == 1
+
+
+def test_live_status_backs_off_when_throttled(thresholds):
+    voice = V.VoiceAnnouncer("tok", "dev", "")
+    calls = []
+
+    def refuse(name, value):
+        calls.append(value)
+        raise RuntimeError("Voice Monkey refused the variable: THROTTLED")
+
+    voice.set_variable = refuse
+    p = V.VoiceStatusPublisher(voice, FakeSensor(reading(22, 50)), FakeSettings(thresholds), "THALPOS_STATUS", 300)
+    assert not p.publish()
+    assert not p.publish(force=True)  # paused: no second request
+    assert len(calls) == 1 and "THROTTLED" in p.last_error
