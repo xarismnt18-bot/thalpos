@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Moon, Watch, Thermometer, Droplets, RefreshCw, LockKeyhole, ShieldCheck, Sparkles, ArrowUpRight, Info } from 'lucide-react';
+import { Moon, Watch, Thermometer, Droplets, RefreshCw, LockKeyhole, ShieldCheck, Sparkles, ArrowUpRight, Info, TrendingUp, AlertCircle } from 'lucide-react';
 import { DEMO } from '../config';
 import { useWearableSessions } from '../hooks/useWearableSessions';
 import './wearable-sleep.css';
@@ -9,7 +9,9 @@ const colors={awake:'#f5b879',awake_in_bed:'#f5b879',out_of_bed:'#f5b879',rem:'#
 const clock=ts=>new Date(ts*1000).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'});
 const minutes=value=>{const n=Math.round(value||0);return n>=60?`${Math.floor(n/60)}ω ${n%60}λ`:`${n}λ`;};
 const pct=value=>value==null?'—':`${value.toLocaleString('el-GR',{maximumFractionDigits:1})}%`;
-const day=ts=>new Date(ts*1000).toLocaleDateString('el-GR',{weekday:'long',day:'numeric',month:'long'});
+/** The header reads "Νύχτα προς 28 Οκτωβρίου" so the user doesn't confuse the night that
+ *  ended this morning with "today". The wake-up date is still what identifies the night. */
+const nightOf=ts=>`Νύχτα προς ${new Date(ts*1000).toLocaleDateString('el-GR',{weekday:'long',day:'numeric',month:'long'})}`;
 const SOURCES={sleep:'https://www.aasm.org/resources/pdf/adultsleepdurationconsensus.pdf',habits:'https://www.nhlbi.nih.gov/health/sleep-deprivation/healthy-sleep-habits',humidity:'https://www.epa.gov/mold/mold-course-chapter-9'};
 
 function ScoreRing({value}) {
@@ -66,6 +68,45 @@ function Insights({night}) {
   </section>;
 }
 
+/** Compact 7-night summary at the top of the page: shows that each measurement is a
+ *  trend across the week, not an isolated number, and lets the user click a night. */
+function TrendStrip({sessions,selectedId,onPick}) {
+  const nights=sessions.slice(0,7).slice().reverse();
+  if(nights.length<2) return null;
+  const metric=(label,unit,get,color)=>{
+    const values=nights.map(get);
+    const known=values.filter(v=>v!=null);
+    if(!known.length) return null;
+    const lo=Math.min(...known),hi=Math.max(...known),span=Math.max(hi-lo,.1);
+    const avg=known.reduce((a,b)=>a+b,0)/known.length;
+    const latest=values[values.length-1];
+    return <div className="sl-trend__metric" key={label}><div className="sl-trend__value"><b>{latest==null?'—':latest.toLocaleString('el-GR',{maximumFractionDigits:1})}<small>{unit}</small></b><span>{label} · μ.ό. 7ν. {avg.toLocaleString('el-GR',{maximumFractionDigits:1})}{unit}</span></div>
+      <svg viewBox="0 0 140 36" className="sl-trend__chart" aria-hidden="true">{values.map((v,i)=>{
+        const x=8+i*(124/Math.max(nights.length-1,1));
+        const y=v==null?30:30-(v-lo)/span*22;
+        return <g key={i}>{v==null?<circle cx={x} cy="30" r="2.4" fill="#4a5e75"/>:<circle cx={x} cy={y} r="2.6" fill={color}/>}</g>;
+      })}{values.filter(v=>v!=null).length>1&&<polyline fill="none" stroke={color} strokeWidth="1.4" strokeOpacity=".75" points={values.map((v,i)=>v==null?null:`${8+i*(124/Math.max(nights.length-1,1))},${30-(v-lo)/span*22}`).filter(Boolean).join(' ')}/>}</svg>
+    </div>;
+  };
+  const metrics=[
+    metric('Ύπνος','ω',s=>s.asleep_minutes?s.asleep_minutes/60:null,'#b5a2f4'),
+    metric('Deep %','%',s=>{const t=(s.end-s.start)/60;return t?Math.round((s.stage_minutes.deep||0)/t*100):null;},'#7778ef'),
+    metric('Θερμ. ύπνου','°C',s=>s.environment.temperature_avg,'#f5b879'),
+    metric('Δείκτης','%',s=>s.quality_index?.combined??null,'#6ed9d1'),
+  ].filter(Boolean);
+  return <section className="sl-card sl-trend">
+    <div className="sl-card__heading"><span className="sl-icon"><TrendingUp size={17}/></span><h3>Οι τελευταίες {nights.length} νύχτες</h3><span className="sl-muted">Πάτα μια κουκίδα για να δεις τη νύχτα</span></div>
+    <div className="sl-trend__grid">{metrics}</div>
+    <div className="sl-trend__dots" role="tablist" aria-label="Νύχτες">{nights.map(n=><button key={n.id} type="button" role="tab" aria-selected={n.id===selectedId} className={`sl-trend__dot ${n.id===selectedId?'is-active':''}`} onClick={()=>onPick(n.id)} title={new Date(n.end*1000).toLocaleDateString('el-GR',{weekday:'long',day:'numeric',month:'short'})}><span>{new Date(n.end*1000).toLocaleDateString('el-GR',{weekday:'short'}).slice(0,2)}</span><em>{new Date(n.end*1000).getDate()}</em></button>)}</div>
+  </section>;
+}
+
+/** The wearable may not report any awake interval at all (Mi Fitness/Xiaomi default). The
+ *  continuity component then becomes "not reported" instead of a misleading 100 %. */
+function AwakeMissingNote() {
+  return <div className="sl-data-note" role="status"><AlertCircle size={16}/><span>Το ρολόι δεν αναφέρει καθόλου αφυπνίσεις σε αυτή τη νύχτα. Ο δείκτης ύπνου υπολογίζεται μόνο από τη διάρκεια, όχι από συνέχεια που θα ήταν πάντα 100 %. Ενεργοποίησε «Λεπτομερή παρακολούθηση ύπνου» στο Mi Fitness αν θέλεις να καταγράφονται και οι ώρες ξύπνιου.</span></div>;
+}
+
 export default function WearableSleep({room}) {
   const [token,setToken]=useState(()=>sessionStorage.getItem('thalpos-sleep-key')||'');
   const [activeToken,setActiveToken]=useState(()=>sessionStorage.getItem('thalpos-sleep-key')||'');
@@ -86,17 +127,19 @@ export default function WearableSleep({room}) {
     <details className="sl-connect sl-card" open={!activeToken}><summary><ShieldCheck size={17}/>{activeToken?'Σύνδεση και ιδιωτικότητα':'Σύνδεσε το προσωπικό σου ιστορικό'}</summary><p>Το κλειδί διατηρείται μόνο στη συνεδρία αυτής της καρτέλας. Ο συγχρονισμός από το κινητό λειτουργεί ανεξάρτητα.</p><form onSubmit={e=>{e.preventDefault();unlock();}}><label>Κλειδί σύνδεσης<input type="password" value={token} onChange={e=>setToken(e.target.value)} autoComplete="off" required minLength={32}/></label><button type="submit" className="sl-primary" disabled={busy||loading}>Φόρτωση ύπνου</button></form>{data&&<button type="button" className="sl-delete" disabled={busy} onClick={remove}>Διαγραφή εισαγωγών ύπνου</button>}</details>
     {!night&&<div className="sl-card sl-empty"><Moon size={36}/><h3>{loading?'Φορτώνουμε τις νύχτες σου':'Η νύχτα σου, σε μια εικόνα'}</h3><p>{data?'Δεν υπάρχουν εισαγωγές για αυτό το δωμάτιο τις τελευταίες 30 ημέρες. Συγχρόνισε πρώτα από το κινητό.':'Σύνδεσε το ιστορικό σου για να δεις ύπνο, περιβάλλον και χρήσιμες παρατηρήσεις μαζί.'}</p></div>}
     {night&&<>
-      <div className="sl-night-heading"><div><span className="sl-eyebrow">Η ΑΝΑΣΚΟΠΗΣΗ ΣΟΥ</span><h2>{day(night.end)}</h2><p><Moon size={14}/>{clock(night.start)} — {clock(night.end)}<span>·</span>{night.room}<span>·</span>Mi Fitness</p></div><label className="sl-select-label">Επιλογή νύχτας<select aria-label="Sleep session" value={night.id} onChange={e=>setPicked(e.target.value)}>{data.sessions.map(s=><option key={s.id} value={s.id}>{new Date(s.end*1000).toLocaleDateString('el-GR')} · {clock(s.start)}–{clock(s.end)}</option>)}</select></label></div>
+      <TrendStrip sessions={data.sessions} selectedId={night.id} onPick={setPicked}/>
+      <div className="sl-night-heading"><div><span className="sl-eyebrow">Η ΑΝΑΣΚΟΠΗΣΗ ΣΟΥ</span><h2>{nightOf(night.end)}</h2><p><Moon size={14}/>{clock(night.start)} — {clock(night.end)}<span>·</span>{night.room}<span>·</span>Mi Fitness</p></div><label className="sl-select-label">Επιλογή νύχτας<select aria-label="Sleep session" value={night.id} onChange={e=>setPicked(e.target.value)}>{data.sessions.map(s=><option key={s.id} value={s.id}>{new Date(s.end*1000).toLocaleDateString('el-GR')} · {clock(s.start)}–{clock(s.end)}</option>)}</select></label></div>
       <div className="sl-overview">
         <article className="sl-card sl-total"><div className="sl-card__heading"><span className="sl-icon"><Sparkles size={18}/></span><h3>Συνολικός δείκτης</h3><span className="sl-tag">Πειραματικός</span></div><ScoreRing value={quality?.combined}/><p className="sl-total__caption">Ύπνος <b>50%</b><span>+</span> Περιβάλλον <b>50%</b></p><p className="sl-muted">{quality?.combined==null?'Περιμένουμε επαρκή δεδομένα και από τις δύο πηγές.':'Μια κοινή εικόνα της νύχτας σου, με ξεκάθαρο υπολογισμό.'}</p></article>
-        <Metric icon={Watch} title="Ο ύπνος σου" value={minutes(night.asleep_minutes)} detail="Καταγεγραμμένος χρόνος ύπνου" tone="violet"><div className="sl-facts"><div><span>Δείκτης ύπνου</span><b>{pct(quality?.watch_component)}</b></div><div><span>Αφυπνίσεις</span><b>{night.awake_periods}</b></div></div><label className="sl-target">Προσωπικός στόχος<select aria-label="Personal sleep duration target" value={targetHours} onChange={e=>setTargetHours(Number(e.target.value))}>{Array.from({length:17},(_,i)=>4+i*.5).map(h=><option key={h} value={h}>{h} ώρες</option>)}</select></label></Metric>
+        <Metric icon={Watch} title="Ο ύπνος σου" value={minutes(night.asleep_minutes)} detail="Καταγεγραμμένος χρόνος ύπνου" tone="violet"><div className="sl-facts"><div><span>Δείκτης ύπνου</span><b>{pct(quality?.watch_component)}</b></div><div><span>Αφυπνίσεις</span><b>{quality?.has_awake_stages===false?'—':night.awake_periods}</b></div></div><label className="sl-target">Προσωπικός στόχος<select aria-label="Personal sleep duration target" value={targetHours} onChange={e=>setTargetHours(Number(e.target.value))}>{Array.from({length:17},(_,i)=>4+i*.5).map(h=><option key={h} value={h}>{h} ώρες</option>)}</select></label></Metric>
         <Metric icon={Thermometer} title="Το περιβάλλον σου" value={pct(quality?.room_component)} detail="Μόνο όσο το ρολόι κατέγραψε ύπνο" tone="mint"><div className="sl-environment"><div><Thermometer size={17}/><b>{night.environment.temperature_avg==null?'—':night.environment.temperature_avg.toFixed(1)}<small>°C</small></b><span>Θερμοκρασία</span></div><div><Droplets size={17}/><b>{night.environment.humidity_avg==null?'—':Math.round(night.environment.humidity_avg)}<small>%</small></b><span>Υγρασία</span></div></div><div className="sl-coverage"><span>Κάλυψη αισθητήρα <b>{Math.round(night.environment.coverage*100)}%</b></span><div><i style={{width:`${night.environment.coverage*100}%`}}/></div></div></Metric>
       </div>
       <section className="sl-card sl-stages"><div className="sl-section-heading"><div><span className="sl-eyebrow">Η ΣΥΝΘΕΣΗ ΤΗΣ ΝΥΧΤΑΣ</span><h3>Στάδια ύπνου</h3></div><span className="sl-muted">Εκτιμήσεις ρολογιού</span></div><div className="sl-stage-strip" aria-hidden="true">{night.stages.map((s,i)=><span key={i} style={{width:`${(s.end-s.start)/(night.end-night.start)*100}%`,background:colors[s.stage]}}/>)}</div><div className="sl-stage-facts">{['deep','light','rem','awake'].map(key=><div key={key}><span><i style={{background:colors[key]}}/>{names[key]}</span><b>{minutes(night.stage_minutes[key])}</b><small>{Math.round((night.stage_minutes[key]||0)/((night.end-night.start)/60)*100)}% της συνεδρίας</small></div>)}</div></section>
+      {quality?.has_awake_stages===false&&<AwakeMissingNote/>}
       {night.overlap_warning&&<div className="sl-data-note" role="status"><Info size={16}/><span>Υπάρχουν επικαλυπτόμενες εγγραφές. Εμφανίζεται η πιο πρόσφατη εκδοχή, χωρίς διπλή πρόσθεση χρόνου. Σύγκρινέ τη με το Mi Fitness.</span></div>}
       <section className="sl-card sl-chart-card"><div className="sl-section-heading"><div><span className="sl-eyebrow">ΣΤΗΝ ΙΔΙΑ ΧΡΟΝΟΓΡΑΜΜΗ</span><h3>Ύπνος και συνθήκες δωματίου</h3></div><span className="sl-tag">Μόνο ώρες ύπνου</span></div><p className="sl-muted">Θερμοκρασία και υγρασία παραμένουν κενές στις αφυπνίσεις και στα διαστήματα χωρίς μετρήσεις.</p><div className="sl-chart-scroll"><AlignedNight night={night}/></div><p className="sl-swipe">Σύρε οριζόντια για να δεις όλη τη νύχτα →</p></section>
       <Insights night={night}/>
-      <details className="sl-card sl-method"><summary><Info size={17}/>Πώς υπολογίζονται οι δείκτες</summary><p>Ύπνος: μέσος όρος διάρκειας σε σχέση με τον προσωπικό στόχο και συνέχειας ύπνου. Απαιτούνται γνωστά στάδια για τουλάχιστον 90% της συνεδρίας. Ο στόχος διάρκειας είναι προσωπική επιλογή.</p><p>Περιβάλλον: σταθμισμένος στον παρατηρημένο χρόνο δείκτης στις ζώνες {quality?.ideal.temp_low}–{quality?.ideal.temp_high} °C και {quality?.ideal.hum_low}–{quality?.ideal.hum_high}% RH. Από το 100 αφαιρούνται έως 50 μονάδες για θερμοκρασία (10 ανά °C εκτός ζώνης) και έως 50 για υγρασία (2,5 ανά μονάδα RH εκτός ζώνης). Απαιτείται κάλυψη τουλάχιστον 80% του ύπνου.</p><p>Συνολικός δείκτης = 50% ύπνος + 50% περιβάλλον. Τα βάρη και οι ζώνες είναι επιλογές του prototype, όχι παγκόσμιο πρότυπο. Δεν είναι ο έτοιμος βαθμός της Xiaomi, πιθανότητα καλού ύπνου ή ιατρική αξιολόγηση. Τα REM και deep δεν βαθμολογούνται με αυθαίρετα «ιδανικά» ποσοστά.</p>{night.unclassified_minutes>0&&<p>Άγνωστα διαστήματα: {minutes(night.unclassified_minutes)}. Δεν συμπληρώνονται με υποθετικά στάδια.</p>}</details>
+      <details className="sl-card sl-method"><summary><Info size={17}/>Πώς υπολογίζονται οι δείκτες</summary><p>Ύπνος: μέσος όρος διάρκειας (σε σχέση με τον προσωπικό στόχο) και συνέχειας ύπνου. Όταν το ρολόι δεν αναφέρει αφυπνίσεις, η συνέχεια δεν τεκμαίρεται ως 100 % — η βαθμολογία ύπνου υπολογίζεται μόνο από τη διάρκεια. Απαιτούνται γνωστά στάδια για τουλάχιστον 90 % της συνεδρίας.</p><p>Περιβάλλον: σταθμισμένος στον παρατηρημένο χρόνο δείκτης στις ζώνες {quality?.ideal.temp_low}–{quality?.ideal.temp_high} °C και {quality?.ideal.hum_low}–{quality?.ideal.hum_high} % RH. Από το 100 αφαιρούνται έως 50 μονάδες για θερμοκρασία (10 ανά °C εκτός ζώνης) και έως 50 για υγρασία (2,5 ανά μονάδα RH εκτός ζώνης). Απαιτείται κάλυψη τουλάχιστον 80 % του ύπνου.</p><p>Συνολικός δείκτης = 50 % ύπνος + 50 % περιβάλλον. Τα βάρη και οι ζώνες είναι επιλογές του prototype, όχι παγκόσμιο πρότυπο. Δεν είναι ο έτοιμος βαθμός της Xiaomi, πιθανότητα καλού ύπνου ή ιατρική αξιολόγηση. Τα REM και deep δεν βαθμολογούνται με αυθαίρετα «ιδανικά» ποσοστά.</p><p className="sl-fineprint">Σημ.: ο αισθητήρας δείχνει συστηματικά περίπου 2 °C πάνω από την πραγματική θερμοκρασία λόγω της ζέστης της πλακέτας. Όταν προστεθεί διόρθωση (offset), ο δείκτης περιβάλλοντος θα ανέβει αντίστοιχα.</p>{night.unclassified_minutes>0&&<p>Άγνωστα διαστήματα: {minutes(night.unclassified_minutes)}. Δεν συμπληρώνονται με υποθετικά στάδια.</p>}</details>
     </>}
   </section>;
 }

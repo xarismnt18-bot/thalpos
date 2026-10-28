@@ -7,7 +7,10 @@ import math
 
 ASLEEP = {'light', 'deep', 'rem', 'sleeping'}
 AWAKE = {'awake', 'awake_in_bed', 'out_of_bed'}
-DEFAULT_IDEAL = {'temp_low':16.0,'temp_high':20.0,'hum_low':40.0,'hum_high':60.0}
+# Humidity high was 60; typical Attica winter indoor humidity sits at 55-65 %, so 60
+# triggered a false penalty on most "normal" nights. 65 matches EPA guidance for mold
+# while leaving routine indoor variation in the comfort zone. Overridable per deployment.
+DEFAULT_IDEAL = {'temp_low':16.0,'temp_high':20.0,'hum_low':40.0,'hum_high':65.0}
 
 
 def asleep_environment(rows, stages, ideal):
@@ -61,16 +64,32 @@ def combined_index(totals, session_minutes, environment, room_score, target_hour
     awake=sum(v for k,v in totals.items() if k in AWAKE)
     classified=asleep+awake
     watch_coverage=min(1,classified/session_minutes) if session_minutes else 0
-    continuity=100*asleep/classified if classified else None
+    # Some wearables (Mi Fitness/Xiaomi, by default) never report an awake stage.
+    # If none ever appears, call continuity "unreported" rather than a perfect 100 %
+    # — a night that spent zero seconds awake is biologically implausible, and
+    # printing 100 % would hide that the signal is simply missing.
+    has_awake_stages=any(k in AWAKE for k in totals)
+    continuity=100*asleep/classified if classified and has_awake_stages else None
     duration=min(100,100*asleep/(target_hours*60))
-    watch=(duration+continuity)/2 if continuity is not None and watch_coverage>=0.9 else None
+    # Fall back to duration alone when the wearable never reports awake intervals,
+    # so the watch component is still produced instead of being blocked.
+    if continuity is not None:
+        watch=(duration+continuity)/2 if watch_coverage>=0.9 else None
+    elif not has_awake_stages and watch_coverage>=0.9:
+        watch=duration
+    else:
+        watch=None
     room=room_score if environment['coverage']>=0.8 and room_score is not None else None
     total=(watch+room)/2 if watch is not None and room is not None else None
+    missing=None
+    if total is None:
+        missing='insufficient_sleep_stages' if watch is None else 'insufficient_room_readings'
     return {'version':'experimental-v1','combined':round(total,1) if total is not None else None,
             'watch_component':round(watch,1) if watch is not None else None,
             'room_component':round(room,1) if room is not None else None,
             'duration_component':round(duration,1),'continuity_component':round(continuity,1) if continuity is not None else None,
+            'has_awake_stages':has_awake_stages,
             'watch_coverage':round(watch_coverage,3),'target_hours':target_hours,'ideal':ideal,
             'weights':{'watch':0.5,'room':0.5},
-            'missing':None if total is not None else 'insufficient_sleep_stages' if watch is None else 'insufficient_room_readings',
+            'missing':missing,
             'notice':'Experimental Thalpos index, not Xiaomi sleep score, a probability, or a medical assessment.'}

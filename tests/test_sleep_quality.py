@@ -64,3 +64,19 @@ def test_no_asleep_stages_means_no_environment_values():
     summary,series,score=asleep_environment([(0,18,50)],[stage(0,60,'awake')],DEFAULT_IDEAL)
     assert summary['samples']==0 and summary['temperature_avg'] is None
     assert series==[] and score is None
+
+
+def test_watch_score_still_computed_when_wearable_omits_awake_stages():
+    environment={'coverage':1}
+    # Mi Fitness pattern: only sleep stages, never an awake interval
+    result=combined_index({'light':240,'deep':150,'rem':60},480,environment,80,8,DEFAULT_IDEAL)
+    assert result['has_awake_stages'] is False
+    assert result['continuity_component'] is None
+    # watch component falls back to duration alone instead of a 100 % continuity invention
+    assert result['watch_component']==round(100*(240+150+60)/480,1)
+    assert result['combined'] is not None
+    assert result['missing'] is None
+
+
+def test_default_humidity_upper_bound_matches_epa_guidance():
+    assert DEFAULT_IDEAL['hum_high']==65.0
