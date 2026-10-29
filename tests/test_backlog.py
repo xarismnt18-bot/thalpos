@@ -80,3 +80,30 @@ def test_backlog_chunks_make_one_visit(tmp_path):
     for k in range(0, 100, 25):   # as the board sends it: 25 readings per message
         store.record_backlog("Bedroom", rows[k:k + 25])
     assert store.visits_between(NOW, NOW + 3600, now=NOW + 3600) == [(NOW, NOW + 100 * 30)]
+
+
+def test_backlog_next_to_live_readings_is_not_stored_twice(tmp_path):
+    """Firmware 3.4 sends its 30 s samples even while the backend stores its own
+    live reading every 30 s, about 9 s apart: that must stay one reading per 30 s."""
+    store = HistoryStore(str(tmp_path / "h.db"))
+    start = NOW - 3600
+    for i in range(60):   # the live writer, at :24.4 / :54.4
+        store.record({"sensor_online": True, "temperature": 21.0, "humidity": 50.0, "room": "Bedroom"}, ts=start + 21.2 + i * 30)
+    rows = [(start + i * 30, 21.0, 50.0, False) for i in range(120)]   # board samples at :03.2 / :33.2
+    stored, _ = store.record_backlog("Bedroom", rows)
+    # the first board sample (21 s before the first live one) and the second half hour,
+    # where nothing was stored live; every other board sample sits 8.8 s from a live one
+    assert stored == 1 + 59
+    assert len(store.rows(start, NOW)) == 60 + 60
+    ts = [r[0] for r in store.rows(start, NOW)]
+    assert min(b - a for a, b in zip(ts, ts[1:])) >= 15
+
+
+def test_prune_removes_readings_that_were_already_doubled(tmp_path):
+    store = HistoryStore(str(tmp_path / "h.db"))
+    for i in range(10):
+        for offset in (0, 8.8):
+            store.record({"sensor_online": True, "temperature": 21.0, "humidity": 50.0, "room": "Bedroom"}, ts=NOW - 600 + i * 30 + offset)
+    store.prune(now=NOW)
+    ts = [r[0] for r in store.rows(NOW - 700, NOW)]
+    assert len(ts) == 10 and all(b - a == 30 for a, b in zip(ts, ts[1:]))

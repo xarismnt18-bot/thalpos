@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_SEC = 30
 KEEP_DAYS = 30
+# Firmware 3.4 keeps sending its own 30 s samples while the backend also stores the live
+# reading every 30 s, on a different clock phase. Two readings closer than this are one.
+MIN_GAP_SEC = SAMPLE_SEC / 2
 STUCK_HOURS = 3  # an unchanged reading for this long suggests a stuck sensor
 
 
@@ -40,6 +43,7 @@ class HistoryStore:
             self._db.execute(
                 "CREATE TABLE IF NOT EXISTS visits (id INTEGER PRIMARY KEY AUTOINCREMENT, started REAL NOT NULL, ended REAL)"
             )
+            self._db.execute("CREATE TABLE IF NOT EXISTS backlog_receipts (batch_id TEXT PRIMARY KEY, created REAL NOT NULL)")
         self._stop = threading.Event()
 
     # ---------- writing ----------
@@ -56,8 +60,24 @@ class HistoryStore:
         cutoff = (now or time.time()) - KEEP_DAYS * 86400
         with self._lock, self._db:
             self._db.execute("DELETE FROM readings WHERE ts < ?", (cutoff,))
+            self._drop_doubles()
+            self._db.execute("DELETE FROM backlog_receipts WHERE created < ?", (cutoff,))
             self._db.execute("DELETE FROM alert_events WHERE ended IS NOT NULL AND ended < ?", (cutoff,))
             self._db.execute("DELETE FROM visits WHERE ended IS NOT NULL AND ended < ?", (cutoff,))
+
+    def _drop_doubles(self) -> int:
+        """Removes readings that sit within MIN_GAP_SEC of the previous one kept
+        (left over from before the backlog stopped doubling the live samples)."""
+        doomed, last = [], None
+        for (ts,) in self._db.execute("SELECT ts FROM readings ORDER BY ts"):
+            if last is not None and ts - last < MIN_GAP_SEC:
+                doomed.append((ts,))
+            else:
+                last = ts
+        self._db.executemany("DELETE FROM readings WHERE ts = ?", doomed)
+        if doomed:
+            logger.info("History: removed %d doubled readings", len(doomed))
+        return len(doomed)
 
     # ---------- alert log ----------
     def alert_started(self, key: str, message: str, ts: float | None = None) -> None:
@@ -115,18 +135,26 @@ class HistoryStore:
             (last,) = self._db.execute("SELECT MAX(ts) FROM readings").fetchone()
             self._db.execute("UPDATE visits SET ended = MAX(started, ?) WHERE ended IS NULL", (last or 0,))
 
-    def record_backlog(self, room: str, rows: list[tuple[float, float, float, bool]]) -> tuple[int, int]:
+    def record_backlog(self, room: str, rows: list[tuple[float, float, float, bool]], batch_id: str | None = None) -> tuple[int, int]:
         """Readings the board kept while this PC was asleep or off (firmware 3.2+).
-        Stores them at the time they were taken (never over a reading already
-        stored), and turns runs of presence into visits where none were recorded.
-        Returns (readings stored, visits added)."""
+        Stores them at the time they were taken, only where the history has a gap
+        (never next to a reading already stored), and turns runs of presence into
+        visits where none were recorded. Returns (readings stored, visits added)."""
         if not rows:
             return 0, 0
         with self._lock, self._db:
-            before = self._db.total_changes
-            self._db.executemany("INSERT OR IGNORE INTO readings VALUES (?, ?, ?, ?)",
-                                 [(ts, room, t, h) for ts, t, h, _p in rows])
-            stored = self._db.total_changes - before
+            if batch_id and self._db.execute("SELECT 1 FROM backlog_receipts WHERE batch_id=?", (room+':'+batch_id,)).fetchone():
+                return 0, 0
+            stored = 0
+            for ts, t, h, _p in rows:
+                # the live writer already covered this moment: keep one reading, not two
+                if self._db.execute("SELECT 1 FROM readings WHERE ts > ? AND ts < ? LIMIT 1",
+                                    (ts - MIN_GAP_SEC, ts + MIN_GAP_SEC)).fetchone():
+                    continue
+                self._db.execute("INSERT INTO readings VALUES (?, ?, ?, ?)", (ts, room, t, h))
+                stored += 1
+            if batch_id:
+                self._db.execute("INSERT INTO backlog_receipts VALUES (?, ?)", (room+':'+batch_id, time.time()))
         visits = 0
         for start, end in _presence_runs(rows):
             visits += self._add_visit_gaps(start, end)
