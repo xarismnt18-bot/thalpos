@@ -56,3 +56,6 @@ flash_esp.log
 
 # serial_log.bat output
 serial_log.txt
+
+# one-off apply_*.bat scripts that already ran (local only)
+tools/applied/
