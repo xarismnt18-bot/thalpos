@@ -35,7 +35,7 @@ def reports(client, room='Bedroom'):
 
 def test_all_health_routes_require_key(context):
     client,*_ = context
-    for method,path in [('GET','/status'),('GET','/sessions?room=Bedroom'),('POST','/sync'),('DELETE','/sessions')]:
+    for method,path in [('GET','/status'),('GET','/sessions?room=Bedroom'),('POST','/sync'),('DELETE','/sessions'),('PUT','/ratings')]:
         assert client.request(method,path).status_code==401
         assert client.request(method,path,headers={'Authorization':'Bearer wrong'}).status_code==401
     assert client.get('/docs').status_code==404
@@ -126,3 +126,44 @@ def test_disabled_without_pairing_key(tmp_path):
         client=TestClient(create_app(store,tmp_path/'none.db',''))
         assert client.get('/status').status_code==503
     finally: store.db.close()
+
+
+def test_morning_rating_is_stored_by_wake_up_date_and_survives_a_new_record_id(context):
+    client,store,_,payload=context
+    client.post('/sync',json=payload,headers=HEADERS)
+    night=reports(client)['sessions'][0]
+    assert night['rating'] is None and len(night['night'])==10
+    body={'room':'Bedroom','night':night['night'],'rating':4}
+    assert client.put('/ratings',json=body,headers=HEADERS).json()=={'night':night['night'],'rating':4}
+    assert reports(client)['sessions'][0]['rating']==4
+    # Mi Fitness re-issues the same night under another record ID: the rating stays
+    payload['sessions'][0]['record_id']='hc-2'
+    client.post('/sync',json=payload,headers=HEADERS)
+    assert reports(client)['sessions'][0]['rating']==4
+    assert reports(client,'Office')['sessions']==[]
+    body['rating']=None
+    client.put('/ratings',json=body,headers=HEADERS)
+    assert reports(client)['sessions'][0]['rating'] is None
+
+
+@pytest.mark.parametrize('body',[{'room':'Bedroom','night':'2026-01-01','rating':6},
+                                 {'room':'Bedroom','night':'2026-01-01','rating':0},
+                                 {'room':'Bedroom','night':'not-a-date','rating':3},
+                                 {'room':'Bedroom','night':'1999-01-01','rating':3},
+                                 {'room':'Bedroom','night':'2026-01-01','rating':3,'note':'x'}])
+def test_invalid_ratings_are_rejected_without_echoing_them(context,body):
+    client,*_=context
+    if body['night']=='2026-01-01':
+        body['night']=(datetime.now().date()-timedelta(days=1)).isoformat()
+    response=client.put('/ratings',json=body,headers=HEADERS)
+    assert response.status_code==422
+    assert response.json()=={'detail':'Invalid rating: use 1-5 (or null) for a night in the last 90 days'}
+
+
+def test_deleting_imports_also_deletes_ratings(context):
+    client,store,_,payload=context
+    client.post('/sync',json=payload,headers=HEADERS)
+    night=reports(client)['sessions'][0]['night']
+    client.put('/ratings',json={'room':'Bedroom','night':night,'rating':2},headers=HEADERS)
+    client.delete('/sessions',headers=HEADERS)
+    assert store.db.execute('SELECT count(*) FROM ratings').fetchone()[0]==0

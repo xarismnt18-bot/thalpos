@@ -193,7 +193,7 @@ function demoAlertLog() {
 }
 
 // a believable week of nights for the Sleep page (same score maths as backend/sleep.py)
-const SLEEP_IDEAL = { temp_low: 16, temp_high: 20, hum_low: 40, hum_high: 60 };
+const SLEEP_IDEAL = { temp_low: 19, temp_high: 23, hum_low: 40, hum_high: 60 };
 const DEMO_NIGHTS = [  // [bed hh:mm, up hh:mm, temp at bedtime, humidity, interruptions | null = estimated, has readings]
   [[23, 40], [7, 10], 22.4, 63, 1, true], [[0, 15], [7, 45], 21.6, 58, 0, true], [[23, 5], [6, 50], 23.1, 66, 2, true],
   [[23, 0], [7, 0], 21.0, 55, null, true], [[0, 40], [8, 5], 20.6, 52, 0, true], [[23, 30], [7, 20], 22.0, 61, 1, false],

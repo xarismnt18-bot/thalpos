@@ -87,7 +87,7 @@ def test_sleep_command(bot, tmp_path):
     start, end = (morning - timedelta(hours=1)).timestamp(), (morning + timedelta(hours=7)).timestamp()
     ts = start - 3600
     while ts <= end + 3600:
-        bot._history.record(reading(22.0, 55.0), ts=ts)
+        bot._history.record(reading(25.0, 55.0), ts=ts)  # 2 degrees above the 19-23 ideal
         ts += 30
     bot._history.visit_started(start)
     bot._history.visit_ended(end)

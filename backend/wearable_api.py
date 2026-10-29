@@ -8,14 +8,14 @@ import hmac
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
-from backend.sleep_quality import ASLEEP, DEFAULT_IDEAL, asleep_environment, combined_index
+from backend.sleep_quality import ASLEEP, DEFAULT_IDEAL, asleep_environment, night_scores
 
 StageName = Literal['unknown', 'awake', 'sleeping', 'out_of_bed', 'awake_in_bed', 'light', 'deep', 'rem']
 
@@ -87,6 +87,25 @@ class Snapshot(StrictModel):
         return self
 
 
+class Rating(StrictModel):
+    """How rested the user felt on waking, 1 (exhausted) to 5 (fully rested); null clears it."""
+    room: str = Field(min_length=1, max_length=80)
+    night: date
+    rating: int | None = Field(default=None, ge=1, le=5)
+
+    @model_validator(mode='after')
+    def recent(self):
+        today = datetime.now().date()
+        if not today - timedelta(days=90) <= self.night <= today + timedelta(days=1):
+            raise ValueError('Rating must be for a night in the last 90 days')
+        return self
+
+
+def night_key(end_ts):
+    """The night is named by the local date the user woke up on."""
+    return datetime.fromtimestamp(end_ts).date().isoformat()
+
+
 class SleepStore:
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -96,6 +115,9 @@ class SleepStore:
             self.db.execute('CREATE TABLE IF NOT EXISTS sessions (source TEXT, record_id TEXT, room TEXT, '
                             'start REAL, end REAL, modified REAL, payload TEXT, PRIMARY KEY(source, record_id))')
             self.db.execute('CREATE TABLE IF NOT EXISTS sync_state (source TEXT PRIMARY KEY, synced REAL)')
+            # Keyed by wake-up date, not record ID: Mi Fitness can re-issue a night under a new ID.
+            self.db.execute('CREATE TABLE IF NOT EXISTS ratings (room TEXT, night TEXT, rating INTEGER, updated REAL, '
+                            'PRIMARY KEY(room, night))')
 
     def sync(self, snapshot):
         """Reconcile a complete paginated snapshot, including removed source records."""
@@ -118,6 +140,7 @@ class SleepStore:
             now = datetime.now(timezone.utc).timestamp()
             self.db.execute('INSERT OR REPLACE INTO sync_state VALUES (?,?)', (source, now))
             self.db.execute('DELETE FROM sessions WHERE end<?', (now - 90 * 86400,))
+            self.db.execute('DELETE FROM ratings WHERE night<?', (night_key(now - 90 * 86400),))
         return {'received': len(ids), 'removed': removed, 'synced_at': now}
 
     def reports(self, history_path, room, days, target_hours=8.0, ideal=None):
@@ -125,6 +148,7 @@ class SleepStore:
         cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
         with self.lock:
             records = self.db.execute('SELECT source,payload FROM sessions WHERE end>? AND room=?', (cutoff, room)).fetchall()
+            ratings = dict(self.db.execute('SELECT night,rating FROM ratings WHERE room=?', (room,)).fetchall())
         sessions = [(source, Session.model_validate_json(payload)) for source, payload in records]
         # Keep every raw record, but never sum overlapping versions as separate nights.
         # Newest source revision wins; tie-break by longest interval then stable ID.
@@ -150,11 +174,13 @@ class SleepStore:
                 stages.append({'start': a, 'end': b, 'stage': stage.stage,
                                'environment': environment_summary(samples, a, b)})
             environment,series,room_score=asleep_environment(rows,stages,ideal)
-            index=combined_index(totals,(end-start)/60,environment,room_score,target_hours,ideal)
+            index=night_scores(totals,(end-start)/60,environment,room_score,target_hours,ideal)
             asleep = sum(v for k,v in totals.items() if k in ('light','deep','rem','sleeping'))
             covered = sum(totals.values())
+            night = night_key(end)
             reports.append({'id': hashlib.sha256(f'{source}:{session.record_id}'.encode()).hexdigest()[:24],
                             'source': source, 'room': room, 'start': start, 'end': end, 'stages': stages,
+                            'night': night, 'rating': ratings.get(night),
                             'stage_minutes': {k: round(v,1) for k,v in totals.items()},
                             'asleep_minutes': round(asleep,1),
                             'unclassified_minutes': round(max(0,(end-start)/60-covered),1),
@@ -165,8 +191,18 @@ class SleepStore:
         return {'sessions': reports, 'excluded_overlapping': len(excluded),
                 'notice': 'Wearable estimates, not a medical assessment. Overlapping versions are excluded, not added.'}
 
+    def rate(self, rating):
+        with self.lock, self.db:
+            if rating.rating is None:
+                self.db.execute('DELETE FROM ratings WHERE room=? AND night=?', (rating.room, rating.night.isoformat()))
+            else:
+                self.db.execute('INSERT OR REPLACE INTO ratings VALUES (?,?,?,?)',
+                                (rating.room, rating.night.isoformat(), rating.rating, datetime.now(timezone.utc).timestamp()))
+        return {'night': rating.night.isoformat(), 'rating': rating.rating}
+
     def clear(self):
         with self.lock, self.db:
+            self.db.execute('DELETE FROM ratings')
             self.db.execute('DELETE FROM sessions')
             self.db.execute('DELETE FROM sync_state')
         return {'deleted': True}
@@ -231,6 +267,18 @@ def create_app(store, history_path, token, ui_dir=None):
     def sessions(room: str = Query(min_length=1,max_length=80), days: int = Query(14,ge=1,le=90),
                  target_hours: float = Query(8,ge=4,le=12,allow_inf_nan=False)):
         return store.reports(history_path,room,days,target_hours)
+
+    @app.put('/ratings', dependencies=[Depends(paired)])
+    async def rate(request: Request):
+        raw = await request.body()
+        if len(raw) > 2000:
+            raise HTTPException(413, 'Rating is too large')
+        try:
+            rating = Rating.model_validate_json(raw)
+        except ValidationError:
+            # Same rule as /sync: never echo submitted health values back.
+            raise HTTPException(422, 'Invalid rating: use 1-5 (or null) for a night in the last 90 days') from None
+        return store.rate(rating)
 
     @app.delete('/sessions', dependencies=[Depends(paired)])
     def delete():
