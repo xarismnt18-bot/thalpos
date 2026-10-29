@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { THRESHOLDS } from "../../config";
+import { useWindowState } from "../../hooks/useWindowState";
 import { useStoredHistory } from "../../hooks/useStoredHistory";
 import { lastSeconds, toSeries } from "../../lib/series";
 import PresenceChart from "../charts/PresenceChart";
@@ -22,6 +23,7 @@ export default function Analytics({ telemetry, room }) {
   const [range, setRange] = useState(RANGES[1]);
   const [hoverTs, setHoverTs] = useState(null);
   const live = range.step === null;
+  const windowState = useWindowState(telemetry.latest.room || room, range.seconds/3600);
   const stored = useStoredHistory(live ? null : range.seconds, range.step);
 
   const source = live ? history : stored.points;
@@ -29,6 +31,7 @@ export default function Analytics({ telemetry, room }) {
   const temps = useMemo(() => lastSeconds(toSeries(source, "temperature"), liveWindow), [source, liveWindow]);
   const hums = useMemo(() => lastSeconds(toSeries(source, "humidity"), liveWindow), [source, liveWindow]);
   const chartProps = {
+    annotations: windowState.data?.events || [],
     hoverTs, onHover: setHoverTs,
     gapSec: live ? 60 : range.step * 3,
     longRange: range.seconds > 2 * 24 * 3600,
@@ -59,6 +62,7 @@ export default function Analytics({ telemetry, room }) {
         <span className="range-filter__note">{note}</span>
       </div>
 
+      <details className="window-history"><summary>Window activity · manual entries</summary>{windowState.error&&<p>{windowState.error}</p>}{!windowState.data?.events.length&&<p>No window entries in this period.</p>}<ul>{windowState.data?.events.map(e=><li key={e.id}>{new Date(e.ts*1000).toLocaleString('el-GR')} · {e.is_open?'Open':'Closed'}{e.action==='confirmed'?' (confirmed)':''}</li>)}</ul><p>Dashed markers: teal = opened, amber = closed. Manual entries do not establish the cause of a change.</p></details>
       <div className="analytics-grid">
         <div className="module-card">
           <TimeSeriesChart

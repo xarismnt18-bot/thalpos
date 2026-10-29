@@ -26,6 +26,7 @@ export default function App() {
       ? 'SLEEP' : 'DASHBOARD'
   ));
   const [navOpen, setNavOpen] = useState(false);
+  const [dashboardVisited, setDashboardVisited] = useState(active === 'DASHBOARD');
   const { toasts, push, dismiss } = useToasts();
   const telemetry = useTelemetry({ onEvent: push });
   const { latest, healthInfo, activeAlerts, history, status, refreshConfig } = telemetry;
@@ -38,6 +39,7 @@ export default function App() {
   const room = CLIENT.ROOM_NAME || latest.room || "Room";
 
   const navigate = (page) => {
+    if (page === 'DASHBOARD') setDashboardVisited(true);
     setActive(page);
     setNavOpen(false);
   };
@@ -47,8 +49,8 @@ export default function App() {
       <MobileBar open={navOpen} onToggle={() => setNavOpen((o) => !o)} status={status} />
       <Sidebar active={active} onNavigate={navigate} status={status} open={navOpen} sensor={latest.sensor} />
 
-      <main className={active === "DASHBOARD" ? "main main--immersive" : "main"} key={active}>
-        {active === "DASHBOARD" && <Dashboard telemetry={telemetry} room={room} />}
+      <main className={active === "DASHBOARD" ? "main main--immersive" : "main"}>
+        {dashboardVisited && <div style={{display:active === 'DASHBOARD'?'contents':'none'}}><Dashboard telemetry={telemetry} room={room} active={active === 'DASHBOARD'} /></div>}
         {active === "FLOORPLAN" && <Floorplan room={room} temp={temp} humidity={humidity} health={health} />}
         {active === "ANALYTICS" && <Analytics telemetry={telemetry} room={room} />}
         {active === "SLEEP" && <Sleep room={room} />}

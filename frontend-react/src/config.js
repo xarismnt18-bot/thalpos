@@ -96,8 +96,8 @@ async function request(path, options) {
   return res.json();
 }
 
-export function apiGet(path) {
-  return request(path);
+export function apiGet(path, options) {
+  return request(path, options);
 }
 
 export async function loadServerConfig() {
@@ -157,4 +157,8 @@ export function formatTime(iso) {
   if (!iso) return "--";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleTimeString();
+}
+
+export function apiPut(path, body) {
+  return request(path, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
 }

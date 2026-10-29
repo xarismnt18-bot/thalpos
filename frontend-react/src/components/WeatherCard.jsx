@@ -84,10 +84,10 @@ const PROBLEM_TEXT = {
 };
 
 /** Outside conditions where you are, and whether opening the window would help the room. */
-export default function WeatherCard({ wx, inside, compact = false }) {
+export default function WeatherCard({ wx, inside, compact = false, manualWindow = null }) {
   const [picking, setPicking] = useState(false);
   const { place, weather, status, problem, choosePlace, retry, manual } = wx;
-  const advice = windowAdvice(inside, weather, THRESHOLDS);
+  const advice = windowAdvice(inside, weather, THRESHOLDS, manualWindow);
 
   if (status === "needs-place" || picking) {
     return (

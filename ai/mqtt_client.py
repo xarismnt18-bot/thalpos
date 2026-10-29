@@ -10,6 +10,7 @@ ESP8266 shows as offline even while the broker is still reachable.
 import json
 import logging
 import math
+import re
 import os
 import sys
 import threading
@@ -71,6 +72,10 @@ def parse_payload(raw: bytes | str) -> dict:
     for key in ("sensor", "fw", "wifi", "ip"):
         if isinstance(payload.get(key), str) and payload[key]:
             reading[key] = payload[key][:40]
+    for key in ('backlog_count','backlog_dropped'):
+        v=payload.get(key)
+        if isinstance(v,int) and not isinstance(v,bool) and 0<=v<=4294967295:
+            reading[key]=v
     rssi = _optional_number(payload.get("rssi"))
     if rssi is not None and RSSI_RANGE[0] <= rssi <= RSSI_RANGE[1]:
         reading["rssi"] = int(round(rssi))
@@ -145,6 +150,7 @@ class SharedMQTTClient:
         self._client: mqtt.Client | None = None
         # called with (room, rows) for each backlog message; set by the app (history store)
         self.on_backlog = None
+        self.on_backlog_batch = None
 
     # --- public API ---------------------------------------------------
 
@@ -166,7 +172,18 @@ class SharedMQTTClient:
             with self._lock:
                 self._invalid_packets += 1
             return 0
-        if rows and self.on_backlog:
+        payload = json.loads(raw)
+        if payload.get('v') == 2:
+            batch_id = payload.get('batch')
+            if (not isinstance(batch_id,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,96}',batch_id)
+                    or not rows or len(rows)>25 or len(rows)!=len(payload['readings']) or len(room)>80):
+                return 0  # no ACK for a partial or malformed batch
+            if not self.on_backlog_batch:
+                return 0
+            self.on_backlog_batch(room,rows,batch_id)  # commit must finish before ACK
+            if self._client:
+                self._client.publish(self.backlog_topic+'/ack',batch_id,qos=1,retain=False)
+        elif rows and self.on_backlog:
             self.on_backlog(room, rows)
         return len(rows)
 
@@ -198,7 +215,7 @@ class SharedMQTTClient:
             # None when the board has no radar (or runs older firmware)
             "presence": reading.get("presence") if reading and sensor_online else None,
             "sensor": reading.get("sensor", "DHT11") if reading else None,
-            "device": {k: reading[k] for k in ("fw", "wifi", "rssi", "ip", "oled_on", "oled_clock_ready") if k in reading} if reading else {},
+            "device": {k: reading[k] for k in ("fw", "wifi", "rssi", "ip", "oled_on", "oled_clock_ready", "backlog_count", "backlog_dropped") if k in reading} if reading else {},
         }
 
     def history(self, limit: int | None = None) -> list[dict]:

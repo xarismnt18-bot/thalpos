@@ -61,7 +61,7 @@ function nearestIndex(points, ts) {
  */
 export default function TimeSeriesChart({
   title, unit, color, points, band, hoverTs, onHover, decimals = 1, gapSec = Infinity, longRange = false,
-  bandLabel = "Comfort range",
+  bandLabel = "Comfort range", annotations = [],
 }) {
   const [frameRef, width] = useElementWidth();
   const innerW = Math.max(width - MARGIN.left - MARGIN.right, 10);
@@ -167,6 +167,7 @@ export default function TimeSeriesChart({
                 </text>
               ))}
 
+              {annotations.filter(e=>e.action==='changed'&&e.ts>=geometry.t0&&e.ts<=geometry.t1).map(e=><line key={e.id} x1={geometry.x(e.ts)} x2={geometry.x(e.ts)} y1={0} y2={innerH} stroke={e.is_open?'#6ee7df':'#f5b879'} strokeDasharray="4 4"><title>{e.is_open?'Window opened':'Window closed'} · {formatClock(e.ts)} · manual input</title></line>)}
               <path d={geometry.path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
               <circle cx={geometry.x(last.ts)} cy={geometry.y(last.value)} r={4} fill={color} className="ts-chart__dot" />
 

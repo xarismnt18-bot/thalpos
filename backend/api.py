@@ -6,6 +6,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -32,6 +33,7 @@ from backend.daily_stats import DailyStats  # noqa: E402
 from backend.telegram_bot import TelegramBot  # noqa: E402
 from backend.voice import EconomyStatusPublisher, VoiceAnnouncer, VoiceStatusPublisher  # noqa: E402
 from backend.ikea import AlertLamp, IkeaOutlet  # noqa: E402
+from backend.window_state import WindowStateStore
 from backend.history_store import HistoryStore  # noqa: E402
 from backend.sleep import sleep_nights, tip as sleep_tip  # noqa: E402
 from backend.preferences import Preferences  # noqa: E402
@@ -48,15 +50,18 @@ telegram = TelegramClient(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 voice = VoiceAnnouncer(VOICEMONKEY_TOKEN, VOICEMONKEY_DEVICE, VOICE_QUIET_HOURS)
 lamp = AlertLamp(IkeaOutlet(IKEA_HUB_IP, IKEA_TOKEN, IKEA_OUTLET_ID), LAMP_QUIET_HOURS)
 history_store = HistoryStore(HISTORY_DB)
+window_store = WindowStateStore(HISTORY_DB)
 
 
 _backlog_seen = {"stored": 0, "first": None}
 
 
-def store_backlog(room: str, rows: list) -> None:
+def store_backlog(room: str, rows: list, batch_id: str | None = None) -> None:
     """Readings the board kept while this PC was asleep or off (firmware 3.2+).
     They arrive in chunks of 25; one log line once the last (shorter) chunk is in."""
-    stored, _visits = history_store.record_backlog(room, rows)
+    stored, _visits = history_store.record_backlog(room, rows, batch_id=batch_id)
+    if not rows or not stored:
+        return
     seen = _backlog_seen
     seen["stored"] += stored
     seen["first"] = seen["first"] or rows[0][0]
@@ -69,6 +74,7 @@ def store_backlog(room: str, rows: list) -> None:
 
 
 sensor.on_backlog = store_backlog
+sensor.on_backlog_batch = store_backlog
 notifier = AlertNotifier(telegram, sensor, settings, NOTIFY_CHECK_SEC, NOTIFY_COOLDOWN_MIN, voice=voice, lamp=lamp,
                          history=history_store, state_path=ALERT_STATE_FILE,
                          humidity_hold_min=HUMIDITY_HOLD_MIN, mold_hours=MOLD_EXPOSURE_HOURS)
@@ -336,3 +342,18 @@ def set_lamp(on: bool):
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return {"on": on}
+
+
+class WindowDeclaration(BaseModel):
+    is_open: bool = Field(strict=True)
+
+
+@app.get('/window-state')
+def get_window_state(room: str = Query(min_length=1,max_length=80), hours: int = Query(24,ge=1,le=720)):
+    return window_store.snapshot(room,hours)
+
+
+@app.put('/window-state')
+def put_window_state(body: WindowDeclaration, room: str = Query(min_length=1,max_length=80), hours: int = Query(24,ge=1,le=720)):
+    window_store.declare(room,body.is_open)
+    return window_store.snapshot(room,hours)

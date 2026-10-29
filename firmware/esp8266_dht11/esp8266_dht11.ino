@@ -12,7 +12,8 @@
 // discovery off completely.
 // v3.2: while the broker can't be reached (the PC asleep or switched off), a
 // reading every 30 s is kept in RAM (up to 10 hours) and sent as a backlog on
-// MQTT_TOPIC/backlog once the broker is back, so the history has no holes.
+// MQTT_TOPIC/backlog once the broker is back (RAM is lost on reset).
+// v3.4: always buffer; retry identified batches until the backend confirms storage.
 // v3.3: OLED-only quiet hours, 23:00-08:00 Europe/Athens by default.
 // Measurements, radar, MQTT and backlog keep running while the display is off.
 //
@@ -30,6 +31,9 @@
 #include <bearssl/bearssl_hmac.h>
 #include <time.h>
 #include <TZ.h>
+extern "C" {
+#include <user_interface.h>
+}
 #include "secrets.h"
 #include "oled_policy.h"
 
@@ -58,7 +62,7 @@ static_assert(OLED_NIGHT_END_HOUR >= 0 && OLED_NIGHT_END_HOUR < 24, "Invalid OLE
 const bool HAS_RADAR = true;   // set false if no radar is wired (the pin would float)
 
 const char* ROOM_NAME = "Bedroom";
-const char* FIRMWARE_VERSION = "3.3";
+const char* FIRMWARE_VERSION = "3.4";
 const char* OTA_HOSTNAME = "thalpos-bedroom";   // reachable as thalpos-bedroom.local
 const unsigned long PUBLISH_INTERVAL_MS = 3000;   // the DHT11 fallback needs >= 1 s between reads
 const unsigned long MQTT_RETRY_MS = 3000;
@@ -108,13 +112,28 @@ struct Buffered { uint32_t at; int16_t t10; uint16_t h10; bool presence; };
 Buffered backlog[BACKLOG_SIZE];
 uint16_t backlogStart = 0, backlogCount = 0;
 unsigned long lastBuffered = 0;
-String backlogTopic;
+String backlogTopic, backlogAckTopic, backlogBoot, pendingBatch;
+uint8_t pendingCount=0;
+uint32_t batchSequence=0, backlogDropped=0;
+unsigned long lastBacklogSend=0;
+
+void backlogAck(char* topic, byte* payload, unsigned int length) {
+  if (String(topic)!=backlogAckTopic || !pendingCount || length!=pendingBatch.length()) return;
+  for (unsigned int i=0;i<length;i++) if ((char)payload[i]!=pendingBatch[i]) return;
+  backlogStart=(backlogStart+pendingCount)%BACKLOG_SIZE;
+  backlogCount-=pendingCount;
+  pendingCount=0;
+  pendingBatch="";
+}
 
 void bufferReading() {
   if (isnan(lastTemp) || isnan(lastHum)) return;
   if (backlogCount == BACKLOG_SIZE) {   // full: the oldest reading makes room
     backlogStart = (backlogStart + 1) % BACKLOG_SIZE;
     backlogCount--;
+    backlogDropped++;
+    pendingCount=0; // overflow invalidates the in-flight selection; late ACK is ignored
+    pendingBatch="";
   }
   Buffered& b = backlog[(backlogStart + backlogCount) % BACKLOG_SIZE];
   b.at = millis();
@@ -125,14 +144,22 @@ void bufferReading() {
 }
 
 // Sends one chunk per call (the loop stays responsive); a reading leaves the
-// buffer only after the broker accepted it. Ages are in seconds, so the board
+// buffer only after the backend acknowledges durable storage. Ages are in seconds, so the board
 // needs no clock: the backend subtracts them from the time it receives them.
 void flushBacklog() {
   if (backlogCount == 0 || !client.connected()) return;
-  uint8_t n = backlogCount < BACKLOG_CHUNK ? backlogCount : BACKLOG_CHUNK;
+  if (pendingCount && millis()-lastBacklogSend<5000) return;
+  if (!pendingCount) {
+    pendingCount=backlogCount<BACKLOG_CHUNK?backlogCount:BACKLOG_CHUNK;
+    pendingBatch=backlogBoot+"-"+String(++batchSequence);
+  }
+  uint8_t n=pendingCount;
+  lastBacklogSend=millis();
   unsigned long now = millis();
   String payload = "{\"room\":\"";
   payload += ROOM_NAME;
+  payload += "\",\"v\":2,\"batch\":\"";
+  payload += pendingBatch;
   payload += "\",\"readings\":[";
   for (uint8_t i = 0; i < n; i++) {
     const Buffered& b = backlog[(backlogStart + i) % BACKLOG_SIZE];
@@ -148,10 +175,9 @@ void flushBacklog() {
     payload += "]";
   }
   payload += "]}";
-  if (!client.publish(backlogTopic.c_str(), payload.c_str())) return;   // try again next loop
-  backlogStart = (backlogStart + n) % BACKLOG_SIZE;
-  backlogCount -= n;
-  Serial.printf("Backlog: sent %u readings, %u left\n", n, backlogCount);
+  client.publish(backlogTopic.c_str(), payload.c_str());
+  // Keep all samples until the matching application-level ACK arrives.
+
 }
 
 // Every network from secrets.h; WiFiMulti picks the strongest one in range.
@@ -209,6 +235,7 @@ void ensureMqtt() {
   if (brokerDiscovered) Serial.print(brokerIp); else Serial.print(MQTT_SERVER);
   Serial.print("...");
   if (client.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
+    client.subscribe(backlogAckTopic.c_str());
     Serial.println(" connected!");
   } else {
     Serial.print(" failed, rc=");
@@ -444,7 +471,11 @@ void publishReading() {
   payload += String(WiFi.RSSI());
   payload += ",\"fw\":\"";
   payload += FIRMWARE_VERSION;
-  payload += "\",\"oled_on\":";
+  payload += "\",\"backlog_count\":";
+  payload += backlogCount;
+  payload += ",\"backlog_dropped\":";
+  payload += backlogDropped;
+  payload += ",\"oled_on\":";
   payload += (hasDisplay && displayOn) ? "true" : "false";
   payload += ",\"oled_clock_ready\":";
   payload += oledClockReady() ? "true" : "false";
@@ -492,6 +523,9 @@ void setup() {
   client.setServer(MQTT_SERVER, MQTT_PORT);
   client.setBufferSize(1024);   // a backlog chunk is ~700 bytes (the default is 256)
   backlogTopic = String(MQTT_TOPIC) + "/backlog";
+  backlogAckTopic=backlogTopic+"/ack";
+  backlogBoot=String(ESP.getChipId(),HEX)+"-"+String(os_random(),HEX)+"-"+String(os_random(),HEX);
+  client.setCallback(backlogAck);
   if (DISCOVERY_ON) {
     discovery.begin(DISCOVERY_PORT);
     Serial.println("Broker discovery: signed beacons only");
@@ -520,8 +554,8 @@ void loop() {
     lastDisplay = millis();
     drawDisplay();
   }
-  // nobody to send to: keep a reading every 30 s for later
-  if (!client.connected() && millis() - lastBuffered >= BACKLOG_EVERY_MS) {
+  // Keep readings even if MQTT is up but the backend is down.
+  if (millis() - lastBuffered >= BACKLOG_EVERY_MS) {
     lastBuffered = millis();
     bufferReading();
   }
