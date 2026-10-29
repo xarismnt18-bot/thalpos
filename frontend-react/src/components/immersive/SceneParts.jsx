@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Edges, Html, Line } from "@react-three/drei";
+import { Edges, Html } from "@react-three/drei";
 import * as THREE from "three";
 import {
-  AI_POS, BROKER_POS, DATA_LEGS, FURNITURE, HEAT_INSET, LIVE_ROOM, ROOMS, SENSOR_POS, WALLS, WALL_HEIGHT,
+  FURNITURE, HEAT_INSET, LIVE_ROOM, ROOMS, SENSOR_POS, WALLS, WALL_HEIGHT,
 } from "./layout";
 
 const NO_DATA = new THREE.Color("#2A3440");
@@ -20,7 +20,7 @@ const groundFragment = `
     float fade = 1. - smoothstep(4., 16., r);
     float ring = smoothstep(.35, 0., abs(r - mod(uTime * 2.2, 18.)));
     float edge = smoothstep(.08, 0., abs(r - 15.));
-    gl_FragColor = vec4(uColor, (grid * .16 + ring * .35) * fade + edge * .25);
+    gl_FragColor = vec4(uColor, (grid * .08 + ring * .14) * fade + edge * .1);
   }`;
 
 export function Ground({ reduced }) {
@@ -86,13 +86,17 @@ export function Apartment({ liveColor, alert, reduced, selected, onSelect, xray 
           pulse={room.live && alert && Boolean(liveColor)} reduced={reduced} />
       ))}
       {WALLS.map((w) => <Wall key={w.join()} wall={w} xray={xray} />)}
-      {FURNITURE.map(([w, h, d, x, z, y0]) => (
-        <mesh key={`${x},${z},${y0}`} position={[x, y0 + h / 2, z]} raycast={() => null}>
-          <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial color="#1A2733" roughness={0.7} />
-          <Edges color={xray ? "#4FB3E8" : "#2B4257"} />
-        </mesh>
-      ))}
+      {FURNITURE.map(([w, h, d, x, z, y0]) => {
+        // rooms without a sensor stay in the background
+        const inLive = x > LIVE_ROOM.x[0] && x < LIVE_ROOM.x[1] && z > LIVE_ROOM.z[0] && z < LIVE_ROOM.z[1];
+        return (
+          <mesh key={`${x},${z},${y0}`} position={[x, y0 + h / 2, z]} raycast={() => null}>
+            <boxGeometry args={[w, h, d]} />
+            <meshStandardMaterial color={inLive ? "#1A2733" : "#121B24"} roughness={0.7} />
+            <Edges color={xray ? "#4FB3E8" : inLive ? "#2B4257" : "#18283A"} />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -108,7 +112,7 @@ const heatFragment = `uniform float uTime; uniform vec3 uColor; uniform float uA
     gl_FragColor = vec4(uColor, (.06 + .22 * vH + .25 * fres) * pulse * uAmp);
   }`;
 
-const PARTICLES = 320;
+const PARTICLES = 140;
 const particleSeed = (() => {
   const pos = new Float32Array(PARTICLES * 3);
   const speed = new Float32Array(PARTICLES);
@@ -164,7 +168,7 @@ export function LiveRoomEffects({ color, view, alert, reduced }) {
           <bufferAttribute attach="attributes-position" args={[particleSeed.pos, 3]} />
         </bufferGeometry>
         <pointsMaterial color="#9BE7FF" size={view === "hum" ? 0.1 : 0.07} transparent depthWrite={false}
-          opacity={view === "hum" ? 1 : view === "xray" ? 0.3 : 0.55} blending={THREE.AdditiveBlending} />
+          opacity={view === "hum" ? 0.9 : view === "xray" ? 0.25 : 0.35} blending={THREE.AdditiveBlending} />
       </points>
       {alert && (
         <mesh position={[c.x, 4.5, c.z]} raycast={() => null}>
@@ -177,81 +181,37 @@ export function LiveRoomEffects({ color, view, alert, reduced }) {
   );
 }
 
-/* ---------- data path: sensor -> MQTT broker -> AI engine ---------- */
-function Orb({ position, color, radius, label, online, reduced }) {
-  const shell = useRef();
-  useFrame((_, dt) => {
-    if (reduced || !shell.current) return;
-    shell.current.rotation.y += dt * 0.5;
-    shell.current.rotation.x += dt * 0.2;
-  });
-  const tint = online ? color : "#3A4654";
-  return (
-    <group position={position}>
-      <mesh><sphereGeometry args={[radius * 0.45, 24, 24]} /><meshBasicMaterial color={tint} /></mesh>
-      <mesh ref={shell}><icosahedronGeometry args={[radius, 1]} /><meshBasicMaterial color={tint} wireframe transparent opacity={0.55} /></mesh>
-      <Html position={[0, radius + 0.6, 0]} center zIndexRange={[10, 0]} className="imm-tag-wrap">
-        <div className={`imm-tag imm-tag--sys ${online ? "" : "imm-tag--off"}`}>{label}{online ? "" : " · offline"}</div>
-      </Html>
-    </group>
-  );
-}
+/* ---------- sensor: a dot, and a soft ripple on the floor when a reading arrives ---------- */
+const RIPPLE_MS = 1200;
 
-const TRAIL = 6;
-const FLIGHT_MS = 1600;
-
-export function DataPath({ packetSeq, status, reduced }) {
-  const packets = useRef([]);
+export function SensorPulse({ packetSeq, status, reduced }) {
   const ripple = useRef();
   const startedAt = useRef(null);
-  const legPoints = useMemo(() => DATA_LEGS.map((leg) => leg.getPoints(60)), []);
 
   useEffect(() => {
     if (packetSeq > 0 && !reduced) startedAt.current = performance.now();
   }, [packetSeq, reduced]);
 
   useFrame(() => {
+    if (!ripple.current) return;
     const t0 = startedAt.current;
-    const k = t0 == null ? 2 : (performance.now() - t0) / FLIGHT_MS;
-    packets.current.forEach((m, i) => {
-      if (!m) return;
-      const kk = k - i * 0.025;
-      m.visible = kk >= 0 && kk <= 1;
-      if (!m.visible) return;
-      const first = kk < 0.55;
-      const local = first ? kk / 0.55 : (kk - 0.55) / 0.45;
-      m.position.copy(DATA_LEGS[first ? 0 : 1].getPoint(easeOut(local)));
-    });
-    if (ripple.current) {
-      const r = k * (FLIGHT_MS / 1200);
-      const on = r < 1;
-      ripple.current.visible = on;
-      if (on) {
-        ripple.current.scale.setScalar(1 + r * 14);
-        ripple.current.material.opacity = 0.3 * (1 - r);
-      }
+    const r = t0 == null ? 2 : (performance.now() - t0) / RIPPLE_MS;
+    const on = r < 1;
+    ripple.current.visible = on;
+    if (on) {
+      ripple.current.scale.setScalar(1 + easeOut(r) * 10);
+      ripple.current.material.opacity = 0.25 * (1 - r);
     }
   });
 
   return (
     <group>
       <mesh position={SENSOR_POS}>
-        <sphereGeometry args={[0.13, 20, 20]} />
+        <sphereGeometry args={[0.11, 20, 20]} />
         <meshBasicMaterial color={status.sensor ? "#7DD3FC" : "#3A4654"} />
       </mesh>
-      <Orb position={BROKER_POS} color="#38BDF8" radius={0.55} label="MQTT broker" online={status.broker} reduced={reduced} />
-      <Orb position={AI_POS} color="#A78BFA" radius={0.7} label="AI engine" online={status.api} reduced={reduced} />
-      {legPoints.map((pts, i) => (
-        <Line key={i} points={pts} color="#38BDF8" lineWidth={1} dashed dashSize={0.18} gapSize={0.14} transparent opacity={0.35} />
-      ))}
-      {Array.from({ length: TRAIL }, (_, i) => (
-        <mesh key={i} ref={(m) => { packets.current[i] = m; }} visible={false}>
-          <sphereGeometry args={[0.14 * (1 - (i / TRAIL) * 0.7), 12, 12]} />
-          <meshBasicMaterial color="#BAE6FD" transparent opacity={1 - i / TRAIL} />
-        </mesh>
-      ))}
       <mesh ref={ripple} rotation-x={-Math.PI / 2} position={[-2.2, 0.08, -0.8]} visible={false}>
-        <ringGeometry args={[0.2, 0.28, 48]} />
+        <ringGeometry args={[0.2, 0.26, 48]} />
         <meshBasicMaterial color="#7DD3FC" transparent opacity={0} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
     </group>
@@ -259,8 +219,8 @@ export function DataPath({ packetSeq, status, reduced }) {
 }
 
 /* ---------- room labels anchored in 3D ---------- */
-export function RoomTags({ liveName, liveText, liveHasData, alert }) {
-  return ROOMS.map((room) => (
+export function RoomTags({ liveName, liveText, liveHasData, alert, selected }) {
+  return ROOMS.filter((room) => room.live || room.id === selected).map((room) => (
     <Html key={room.id} position={[room.center.x, room.live ? 2.3 : 1.7, room.center.z]} center zIndexRange={[10, 0]} className="imm-tag-wrap">
       {room.live ? (
         <div className={`imm-tag ${liveHasData ? "imm-tag--live" : ""} ${liveHasData && alert ? "imm-tag--alert" : ""}`}>{liveName} <span className="num">{liveText}</span></div>

@@ -4,7 +4,8 @@ import { OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { OptionalBoundary } from "../ui/OptionalBoundary";
 import { homeView, roomView, ROOMS } from "./layout";
-import { Apartment, CameraDirector, DataPath, Ground, LiveRoomEffects, RoomTags } from "./SceneParts";
+import { Apartment, CameraDirector, Ground, LiveRoomEffects, RoomTags, SensorPulse } from "./SceneParts";
+import RoomWindow from "./RoomWindow";
 import { Presence } from "./Presence";
 
 const START = [34, 30, 38]; // far away; the intro flight swoops in from here
@@ -32,7 +33,7 @@ function BandFraming({ enabled }) {
       } else {
         const { width: w, height: h } = size;
         const center = (top + bottom) / 2 - canvas.top;
-        // house + orbs take about CONTENT_SHARE of the canvas height; zoom out
+        // the house takes about CONTENT_SHARE of the canvas height; zoom out
         // on short screens so they fit in the band with some margin
         const scale = Math.min(1, (0.85 * (bottom - top)) / (CONTENT_SHARE * h));
         camera.setViewOffset(w * scale, h * scale, (w * scale - w) / 2, (h * scale) / 2 - center, w, h);
@@ -59,7 +60,7 @@ function BandFraming({ enabled }) {
  * a hologram in the live room while the radar sees someone.
  */
 export default function ImmersiveScene({
-  liveName, liveColor, liveText, view, focus, selected, onSelect, alert, packetSeq, status, reduced, narrow, presence, presenceSince,
+  liveName, liveColor, liveText, view, focus, selected, onSelect, alert, packetSeq, status, reduced, narrow, presence, presenceSince, windowState, active=true,
 }) {
   const controls = useRef();
   const camView = useMemo(() => {
@@ -71,7 +72,7 @@ export default function ImmersiveScene({
     <Canvas
       className="imm-canvas"
       dpr={[1, 2]}
-      frameloop={reduced ? "demand" : "always"}
+      frameloop={!active ? "never" : reduced ? "demand" : "always"}
       camera={{ fov: 38, near: 0.1, far: 200, position: reduced ? camView.position.toArray() : START }}
       aria-label="3D model of the home. Drag to orbit, scroll to zoom, click a room to focus it."
     >
@@ -83,9 +84,10 @@ export default function ImmersiveScene({
       <Ground reduced={reduced} />
       <Apartment liveColor={liveColor} alert={Boolean(alert)} reduced={reduced} selected={selected} onSelect={onSelect} xray={view === "xray"} />
       {liveColor && <LiveRoomEffects color={liveColor} view={view} alert={alert} reduced={reduced} />}
+      <RoomWindow state={windowState} />
       <Presence present={Boolean(presence)} since={presenceSince} reduced={reduced} />
-      <DataPath packetSeq={packetSeq} status={status} reduced={reduced} />
-      <RoomTags liveName={liveName} liveText={liveText} liveHasData={Boolean(liveColor)} alert={Boolean(alert)} />
+      <SensorPulse packetSeq={packetSeq} status={status} reduced={reduced} />
+      <RoomTags liveName={liveName} liveText={liveText} liveHasData={Boolean(liveColor)} alert={Boolean(alert)} selected={selected} />
 
       <OrbitControls
         ref={controls}

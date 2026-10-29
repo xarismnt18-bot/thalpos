@@ -44,23 +44,14 @@ export const FURNITURE = [
 ];
 
 export const SENSOR_POS = new THREE.Vector3(-1.2, 1.1, -0.6);
-export const BROKER_POS = new THREE.Vector3(1.5, 6.2, -1);
-export const AI_POS = new THREE.Vector3(6.5, 7.6, 3);
-
-function arc(a, b, lift) {
-  const mid = a.clone().add(b).multiplyScalar(0.5);
-  mid.y += lift;
-  return new THREE.QuadraticBezierCurve3(a.clone(), mid, b.clone());
-}
-export const DATA_LEGS = [arc(SENSOR_POS, BROKER_POS, 3), arc(BROKER_POS, AI_POS, 1.5)];
 
 // Camera framing
 export const HOME_DIR = new THREE.Vector3(15, 13, 17).normalize();
 export function homeView(narrow) {
   return {
     position: HOME_DIR.clone().multiplyScalar(narrow ? 47 : 25),
-    // phones: centre house + data orbs in the band left free by the HUD
-    target: new THREE.Vector3(0, narrow ? 1.4 : 0.5, 0),
+    // phones: centre the house in the band left free by the HUD
+    target: new THREE.Vector3(0, narrow ? 0.8 : 0.5, 0),
   };
 }
 export function roomView(room, narrow) {

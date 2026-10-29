@@ -85,7 +85,7 @@ export function absoluteHumidity(tempC, rh) {
  * Humidity is compared as absolute humidity: 90% at 8°C outside can still be
  * much drier than 65% at 24°C inside.
  */
-export function windowAdvice(inside, outside, t) {
+function baseWindowAdvice(inside, outside, t) {
   if (inside?.temperature == null || inside?.humidity == null || !outside) return null;
   const inT = inside.temperature, inH = inside.humidity;
   const outT = outside.temperature, outH = outside.humidity;
@@ -127,5 +127,17 @@ export function windowAdvice(inside, outside, t) {
       ? { tone: "open", title: "Open the window", why: "The air outside is more humid and will make the room less dry." }
       : { tone: "closed", title: "Keep the window closed", why: "The air outside is dry too." };
   }
-  return { tone: "neutral", title: "No need to open", why: "The room is in the comfort range. A few minutes of airing a day keeps the air fresh." };
+  return { tone: "neutral", title: "Temperature / humidity within limits", why: "These measurements do not determine ventilation needs: CO₂ is not measured." };
+}
+
+
+export function windowAdvice(inside, outside, thresholds, manual=null) {
+  const advice=baseWindowAdvice(inside,outside,thresholds);
+  // an unconfirmed window is asked about once, in the room card; here just give the outdoor advice
+  if(manual?.needs_confirmation) return advice;
+  if(manual?.state==='open') return {
+    tone:advice?.tone==='closed'?'closed':'neutral',
+    title:advice?.tone==='closed'?'Window open · check outdoor conditions':'Window is already open',
+    why:advice?.tone==='closed'?advice.why:'Manual input. Monitor the room trend; CO₂ and the actual window position are not measured.'};
+  return advice;
 }

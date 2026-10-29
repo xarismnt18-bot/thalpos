@@ -1,7 +1,8 @@
-import { DEMO, THRESHOLDS, SERVER, formatTime } from "../../config";
+import { DEMO, THRESHOLDS } from "../../config";
 import { humidityLegendGradient, temperatureLegendGradient } from "../../lib/colorScale";
 import { lastSeconds, toSeries, trendPer10Min } from "../../lib/series";
 import { LIVE_ROOM_ID, ROOMS } from "./layout";
+import WindowControl from "../WindowControl";
 import WeatherCard from "../WeatherCard";
 
 const VIEWS = [["temp", "Temperature"], ["hum", "Humidity"], ["xray", "X-ray"]];
@@ -25,7 +26,7 @@ function StatusPills({ status, secondsAgo }) {
   );
 }
 
-function Sparkline({ points, color }) {
+function Sparkline({ points, color, events=[] }) {
   const W = 280, H = 64, PAD = 6;
   const { TEMP_LOW, TEMP_HIGH } = THRESHOLDS;
   if (points.length < 2) {
@@ -43,20 +44,34 @@ function Sparkline({ points, color }) {
     <svg className="imm-spark" viewBox={`0 0 ${W} ${H}`} role="img"
       aria-label={`Temperature over the last hour, now ${fmt(last.value)} degrees`}>
       <rect x="0" y={y(TEMP_HIGH)} width={W} height={y(TEMP_LOW) - y(TEMP_HIGH)} className="imm-spark__band" />
+      {events.filter(e=>e.action==='changed'&&e.ts>=t0&&e.ts<=t1).map(e=><line key={e.id} x1={x(e.ts)} x2={x(e.ts)} y1="0" y2={H} stroke={e.is_open?'#6ee7df':'#f5b879'} strokeDasharray="3 3"><title>{e.is_open?'Window opened':'Window closed'} · manual input</title></line>)}
       <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={x(last.ts)} cy={y(last.value)} r="4" fill={color} />
     </svg>
   );
 }
 
-function LiveRoomPanel({ room, latest, healthInfo, history, hasData, status, colorHex }) {
+const MOLD_TONE = { moderate: "warn", high: "alert" };
+
+/** Small facts as chips: only what is true right now, nothing when there is nothing to say. */
+function RoomChips({ latest, healthInfo }) {
+  const mold = healthInfo.mold_risk;
+  const chips = [];
+  if (latest.presence != null) chips.push([latest.presence ? "in" : "", latest.presence ? "Someone is here" : "Empty"]);
+  if (MOLD_TONE[mold]) chips.push([MOLD_TONE[mold], `Mold risk ${mold}`]);
+  if (!chips.length) return null;
+  return <p className="imm-chips-row">{chips.map(([tone, text]) => <span key={text} className={`imm-chip ${tone ? `imm-chip--${tone}` : ""}`}><i aria-hidden="true" />{text}</span>)}</p>;
+}
+
+function LiveRoomPanel({ room, latest, healthInfo, history, hasData, status, colorHex, windowState }) {
   const points = lastSeconds(toSeries(history, "temperature"), 3600);
   const trend = trendPer10Min(points);
+  const values = points.map((p) => p.value);
   return (
     <>
       <div className="imm-room-head">
         <h1>{room}</h1>
-        <small>{latest.sensor || "DHT11"} · {SERVER.mqttTopic}</small>
+        <small>{latest.sensor || "DHT11"}</small>
       </div>
       {hasData ? (
         <>
@@ -71,19 +86,19 @@ function LiveRoomPanel({ room, latest, healthInfo, history, hasData, status, col
           {status.api ? (status.broker ? "Waiting for the sensor. No recent packets." : "MQTT broker unreachable.") : "Backend unreachable. Start the API to see live data."}
         </p>
       )}
-      <dl className="imm-stats">
+      <dl className="imm-stats imm-stats--two">
         <div><dt>Humidity</dt><dd className="num">{hasData ? `${fmt(latest.humidity, 0)}%` : "--"}</dd></div>
-        <div><dt>Health</dt><dd className="num">{hasData ? (healthInfo.health_score ?? "--") : "--"}</dd></div>
         <div><dt>Dew point</dt><dd className="num">{hasData && healthInfo.dew_point != null ? `${fmt(healthInfo.dew_point)}°` : "--"}</dd></div>
       </dl>
-      {hasData && latest.presence != null && (
-        <p className={`imm-presence ${latest.presence ? "is-in" : ""}`}>
-          <span aria-hidden="true" />{latest.presence ? "Someone is in the room" : "Room is empty"}
-        </p>
+      {hasData && <RoomChips latest={latest} healthInfo={healthInfo} />}
+      <WindowControl windowState={windowState} />
+      <Sparkline points={points} color={colorHex ?? "#64748B"} events={windowState.data?.events} />
+      {values.length > 1 && (
+        <div className="imm-spark-cap">
+          <span>Last hour · <span className="num">{fmt(Math.min(...values))}–{fmt(Math.max(...values))}°</span></span>
+          <span>shaded = comfort {THRESHOLDS.TEMP_LOW}–{THRESHOLDS.TEMP_HIGH}°</span>
+        </div>
       )}
-      {hasData && healthInfo.mold_risk && <p className="imm-muted">Mold risk: {healthInfo.mold_risk}</p>}
-      <Sparkline points={points} color={colorHex ?? "#64748B"} />
-      <div className="imm-spark-cap"><span>Last hour</span><span>Band = comfort {THRESHOLDS.TEMP_LOW}–{THRESHOLDS.TEMP_HIGH}°</span></div>
     </>
   );
 }
@@ -129,27 +144,9 @@ function PhoneAlert({ status, alerts, room }) {
   );
 }
 
-function PacketLog({ rows }) {
-  return (
-    <div className="imm-panel imm-log">
-      <h2>Packet stream</h2>
-      {rows.length === 0 ? <p className="imm-muted">No packets yet.</p> : (
-        <ol>
-          {rows.map((r) => (
-            <li key={r.key} className={r.fresh ? "is-fresh" : ""}>
-              <span className="num">{formatTime(r.time)}</span>
-              <span className="num">{fmt(r.temperature)}° · {fmt(r.humidity)}%</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
 export default function ImmersiveHud({
   room, latest, healthInfo, history, status, alerts, hasData, colorHex,
-  view, onView, selected, onSelect, onHome, packetRows, wx,
+  view, onView, selected, onSelect, onHome, wx, windowState,
 }) {
   const inside = hasData ? { temperature: latest.temperature, humidity: latest.humidity } : null;
   const selectedRoom = ROOMS.find((r) => r.id === selected);
@@ -167,15 +164,14 @@ export default function ImmersiveHud({
       <section className="imm-left imm-panel" aria-label="Selected room">
         <PhoneAlert status={status} alerts={alerts} room={room} />
         {selected === LIVE_ROOM_ID
-          ? <LiveRoomPanel room={room} latest={latest} healthInfo={healthInfo} history={history} hasData={hasData} status={status} colorHex={colorHex} />
+          ? <LiveRoomPanel room={room} latest={latest} healthInfo={healthInfo} history={history} hasData={hasData} status={status} colorHex={colorHex} windowState={windowState} />
           : <EmptyRoomPanel name={selectedRoom?.name} />}
-        <div className="wx-phone"><WeatherCard wx={wx} inside={inside} compact /></div>
+        <div className="wx-phone"><WeatherCard wx={wx} inside={inside} manualWindow={windowState.error?null:windowState.data} compact /></div>
       </section>
 
       <aside className="imm-right" aria-label="Activity">
         <AlertPanel status={status} alerts={alerts} room={room} />
-        <WeatherCard wx={wx} inside={inside} />
-        <PacketLog rows={packetRows} />
+        <WeatherCard wx={wx} inside={inside} manualWindow={windowState.error?null:windowState.data} />
       </aside>
 
       <footer className="imm-bottom">
@@ -189,7 +185,7 @@ export default function ImmersiveHud({
             ))}
           </div>
           <div className="imm-chips" role="group" aria-label="Rooms">
-            {ROOMS.map((r) => (
+            {ROOMS.filter((r) => r.live || selected === r.id).map((r) => (
               <button key={r.id} type="button" aria-pressed={selected === r.id} onClick={() => onSelect(r.id)}>
                 <span className="imm-swatch" style={{ background: r.live && hasData ? colorHex : "#3A4654" }} aria-hidden="true" />
                 {r.live ? room : r.name}

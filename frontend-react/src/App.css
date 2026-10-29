@@ -1973,3 +1973,39 @@ body { background: var(--bg); font-family: Manrope, system-ui, sans-serif; }
 .sleep-empty p { color: var(--ink-2); max-width: 64ch; line-height: 1.6; }
 @media (max-width: 767.98px) { .sleep-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .sleep-bars__bar { transition: none; } }
+
+.window-control{margin:8px 0;padding:12px;border:1px solid #6ee7df33;border-radius:10px;background:#0e2533}.window-control__title{display:flex;align-items:center;justify-content:space-between;gap:8px}.window-control__title strong{font-size:13px}.window-control__title span,.window-control small{font-size:10px;color:#a3b9c9}.window-control p{font-size:12px;margin:8px 0}.window-control__note{color:#f5b879}.window-control__buttons{display:flex;gap:7px}.window-control button{flex:1;background:#112b3d;color:#dceef5;border:1px solid #4b7187;border-radius:7px;padding:9px 5px;cursor:pointer;font-size:11px}.window-control button[aria-pressed=true]{border-color:#6ee7df;background:#18434a}.window-control button:disabled{opacity:.5;cursor:wait}.window-control button:focus-visible{outline:2px solid #6ee7df;outline-offset:2px}.window-history{margin:14px 0;padding:14px;border:1px solid #29465b;border-radius:10px;font-size:12px;color:#afc5d5}.window-history summary{cursor:pointer}.window-history ul{max-height:160px;overflow:auto;padding-left:20px}.window-history p{margin-top:10px}
+@media(max-width:767.98px){.window-control{padding:9px;margin:4px 0}.window-control p{margin:5px 0}}
+
+/* ---------- v6.21: calmer dashboard ---------- */
+.imm-stats--two { grid-template-columns: repeat(2, 1fr); }
+.imm-chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px !important; }
+.imm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--ink-2); background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.18); }
+.imm-chip i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.imm-chip--in { color: var(--ink); }
+.imm-chip--in i { background: #34D399; border-color: #34D399; }
+.imm-chip--warn { color: #F5C48A; border-color: rgba(245, 184, 121, 0.35); background: rgba(245, 184, 121, 0.08); }
+.imm-chip--warn i { background: #F5B879; border-color: #F5B879; }
+.imm-chip--alert { color: #FCA5A5; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); }
+.imm-chip--alert i { background: #EF4444; border-color: #EF4444; }
+
+.window-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 4px; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(148, 163, 184, 0.04); }
+.window-control.is-stale { border-color: rgba(245, 184, 121, 0.35); }
+.window-control__state { display: flex; flex-direction: column; gap: 1px; margin: 0 !important; font-size: 13px; }
+.window-control__state strong { font-size: 11px; font-weight: 600; color: var(--muted); }
+.window-control__state span { color: var(--ink); }
+.window-control__state em { font-style: normal; color: #F5B879; }
+.window-control__buttons { display: flex; gap: 6px; }
+.window-control button { flex: none; min-width: 64px; min-height: 36px; padding: 6px 10px; font-size: 12px; }
+.window-control small, .window-control__error { flex-basis: 100%; }
+.window-control:has(small, .window-control__error) { flex-wrap: wrap; }
+
+.sidebar button { text-transform: none; letter-spacing: 0; font-size: 14px; }
+.sidebar .nav-more { color: var(--muted); font-weight: 500; }
+.sidebar .nav-more svg { width: 18px; height: 18px; transition: transform var(--duration) var(--ease); }
+.sidebar .nav-more svg.is-open { transform: rotate(180deg); }
+.sidebar .nav-more:hover { color: var(--ink-2); }
+.nav-more__list { display: flex; flex-direction: column; gap: 7px; padding-left: 10px; border-left: 1px solid var(--line); margin-left: 20px; }
+.nav-bottom { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.system__meta { display: block !important; color: var(--muted); font-size: 11px; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .sidebar .nav-more svg { transition: none; } }

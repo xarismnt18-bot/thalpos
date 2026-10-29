@@ -4,8 +4,8 @@ import { THRESHOLDS } from "../../config";
 import { humidityColor, temperatureColor } from "../../lib/colorScale";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { usePacketLog } from "../../hooks/usePacketLog";
 import { useOutdoorWeather } from "../../hooks/useOutdoorWeather";
+import { useWindowState } from "../../hooks/useWindowState";
 import ImmersiveScene from "../immersive/ImmersiveScene";
 import ImmersiveHud from "../immersive/ImmersiveHud";
 import { LIVE_ROOM_ID } from "../immersive/layout";
@@ -18,15 +18,15 @@ function alertLevel(alerts, temp, hum) {
 }
 
 /** Dashboard = the house itself: full-bleed live 3D twin with a HUD on top. */
-export default function Dashboard({ telemetry, room }) {
+export default function Dashboard({ telemetry, room, active=true }) {
   const { latest, healthInfo, activeAlerts, history, status, packetSeq } = telemetry;
   const reduced = usePrefersReducedMotion();
   const narrow = useMediaQuery("(max-width: 767.98px)");
   const [view, setView] = useState("temp");
   const [selected, setSelected] = useState(LIVE_ROOM_ID);
   const [focus, setFocus] = useState("home");
-  const packetRows = usePacketLog(latest, packetSeq, history);
   const wx = useOutdoorWeather();
+  const windowState = useWindowState(latest.room || room);
 
   const temp = latest.temperature;
   const hum = latest.humidity;
@@ -49,6 +49,8 @@ export default function Dashboard({ telemetry, room }) {
   return (
     <div className="imm">
       <ImmersiveScene
+        active={active}
+        windowState={windowState.visualState}
         liveName={room}
         liveColor={liveColor}
         liveText={hasData ? `${temp.toFixed(1)}° · ${Math.round(hum)}%` : status.api ? "no data" : "offline"}
@@ -78,7 +80,7 @@ export default function Dashboard({ telemetry, room }) {
         selected={selected}
         onSelect={selectRoom}
         onHome={() => setFocus("home")}
-        packetRows={packetRows}
+        windowState={windowState}
         wx={wx}
       />
     </div>

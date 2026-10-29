@@ -1,6 +1,7 @@
-import { Menu, X } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Menu, X } from "lucide-react";
 import { AUTHOR, DEMO, REPO_URL, SERVER } from "../../config";
-import { PAGES } from "../../lib/pages";
+import { MAIN_PAGES, MORE_PAGES, SETTINGS_PAGE } from "../../lib/pages";
 
 function connectionLabel(status) {
   if (!status.api) return { text: "API offline", ok: false };
@@ -65,33 +66,42 @@ export function MobileBar({ open, onToggle, status }) {
   );
 }
 
+function NavButton({ page, active, onNavigate }) {
+  const [id, Icon, label] = page;
+  return (
+    <button type="button" className={active === id ? "active" : ""} aria-current={active === id ? "page" : undefined} onClick={() => onNavigate(id)}>
+      <Icon aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
+
 export default function Sidebar({ active, onNavigate, status, open, sensor }) {
   const net = connectionLabel(status);
+  const inMore = MORE_PAGES.some(([id]) => id === active);
+  const [moreOpen, setMoreOpen] = useState(inMore);
+  const showMore = moreOpen || inMore;
 
   return (
     <aside className="sidebar" id="main-nav" data-open={open}>
       <Brand />
 
       <nav aria-label="Pages">
-        {PAGES.map(([name, Icon]) => (
-          <button
-            key={name}
-            type="button"
-            className={active === name ? "active" : ""}
-            aria-current={active === name ? "page" : undefined}
-            onClick={() => onNavigate(name)}
-          >
-            <Icon aria-hidden="true" />
-            {name}
-          </button>
-        ))}
+        {MAIN_PAGES.map((page) => <NavButton key={page[0]} page={page} active={active} onNavigate={onNavigate} />)}
+        <button type="button" className="nav-more" aria-expanded={showMore} aria-controls="nav-more-list" onClick={() => setMoreOpen((o) => !o)}>
+          <ChevronDown aria-hidden="true" className={showMore ? "is-open" : ""} />
+          More
+        </button>
+        {showMore && (
+          <div id="nav-more-list" className="nav-more__list">
+            {MORE_PAGES.map((page) => <NavButton key={page[0]} page={page} active={active} onNavigate={onNavigate} />)}
+          </div>
+        )}
+        <div className="nav-bottom"><NavButton page={SETTINGS_PAGE} active={active} onNavigate={onNavigate} /></div>
       </nav>
 
       <div className="system">
-        <p>Version <b>v6.20</b></p>
-        {DEMO && <p>Mode <b>Demo, simulated</b></p>}
-        <p>Sensor <b>{sensor || "--"}</b></p>
-        <p>Topic <b>{SERVER.mqttTopic}</b></p>
+        <p className="system__meta">v6.21 · {sensor || "no sensor"}{DEMO ? " · demo" : ""} · {SERVER.mqttTopic}</p>
         <p className="system__status">
           <span className={`status-dot ${net.ok ? "" : "status-dot--off"}`} aria-hidden="true" />
           <strong className={net.ok ? "" : "status-off"}>{net.text}</strong>
