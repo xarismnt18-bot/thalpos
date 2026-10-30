@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#04070C" />
+  <title>Thalpos is offline</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: #04070C; color: #E6F0F7;
+           font: 16px/1.6 system-ui, sans-serif; padding: 24px; box-sizing: border-box; }
+    main { max-width: 34ch; }
+    img { width: 72px; height: 72px; border-radius: 16px; }
+    h1 { font-size: 22px; margin: 16px 0 8px; }
+    p { color: #9DB2C2; margin: 0 0 12px; }
+    button { min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid #38BDF8; background: rgba(56,189,248,.12);
+             color: #38BDF8; font: inherit; font-weight: 600; cursor: pointer; }
+    .by { margin-top: 28px; font-size: 13px; }
+    .by a { color: #38BDF8; }
+    button:focus-visible { outline: 2px solid #38BDF8; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="icon-192.png" alt="" />
+    <h1>Can't reach Thalpos</h1>
+    <p>The PC running Thalpos is off or asleep, or this phone has no connection (check that Tailscale is on).</p>
+    <button type="button" onclick="location.reload()">Try again</button>
+    <p class="by">Thalpos · built by <a href="https://www.linkedin.com/in/charalampos-mentsios/">Charalampos Mentsios</a></p>
+  </main>
+</body>
+</html>
