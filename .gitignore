@@ -47,6 +47,9 @@ voice.env
 # IKEA hub token written by setup_ikea.bat
 ikea.env
 
+# data backups (backup_data.bat)
+backups/
+
 # audit / helper logs
 *.log
 

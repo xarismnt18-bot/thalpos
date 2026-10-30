@@ -117,6 +117,8 @@ The scripts are in the project root and can be double-clicked. Each writes a `.l
 | `setup_ikea.bat` | Alert lamp on an IKEA smart plug (optional) |
 | `setup_remote.bat` | Dashboard on the phone over Tailscale (optional) |
 | `keep_awake.bat` | Keep a laptop server from sleeping while plugged in |
+| `setup_backup.bat` | Once: weekly automatic backup of the history, sleep nights and settings (first one now) |
+| `backup_data.bat` | Back up the data right now into `backups\` (set `BACKUP_DIR` in `.env` for a OneDrive folder) |
 | `publish_demo.bat` | Rebuild the online demo on GitHub Pages |
 
 ## Repository map
